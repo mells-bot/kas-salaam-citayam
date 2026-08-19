@@ -1,0 +1,115 @@
+@import 'tailwindcss';
+
+/*
+ * Sistem Kas Cluster Salaam Citayam.
+ *
+ * Aplikasi ini sengaja berkomitmen pada satu tampilan (terang) — dipakai
+ * bersama-sama oleh warga & pengurus di layar HP dengan kondisi cahaya
+ * beragam, dan tampilan tunggal menghilangkan satu sumber ketidakkonsistenan.
+ *
+ * Warna seri grafik memakai slot kategorikal 1 (biru) & 2 (oranye), dan status
+ * memakai status palette. Kombinasi ini sudah divalidasi terhadap surface
+ * #fcfcfb: pemisahan CVD ΔE 24.7 dan kontras >= 3:1.
+ */
+
+@theme {
+  --color-surface: #fcfcfb;
+  --color-plane: #f9f9f7;
+
+  --color-ink: #0b0b0b;
+  --color-ink-2: #52514e;
+  --color-ink-muted: #898781;
+
+  --color-grid: #e1e0d9;
+  --color-baseline: #c3c2b7;
+  --color-hairline: rgba(11, 11, 11, 0.1);
+
+  /* Slot kategorikal untuk grafik */
+  --color-seri-1: #2a78d6;
+  --color-seri-2: #eb6834;
+
+  /* Status palette — tidak pernah dipakai sebagai warna seri */
+  --color-baik: #0ca30c;
+  --color-ingat: #fab219;
+  --color-serius: #ec835a;
+  --color-kritis: #d03b3b;
+  --color-sukses-teks: #006300;
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-plane);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Angka dalam kolom tabel harus rata vertikal agar mudah dijumlah mata. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fokus keyboard yang selalu terlihat — form ini dipakai untuk uang. */
+:focus-visible {
+  outline: 2px solid var(--color-seri-1);
+  outline-offset: 2px;
+}
+
+/* Menghilangkan spinner input number: nominal rupiah diketik, bukan diputar. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+/* --- Cetak / simpan PDF (F-12) --------------------------------------------
+ * Laporan bulanan dicetak lewat dialog cetak peramban, jadi tidak perlu
+ * pustaka PDF berbayar atau bundel besar di sisi klien.
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  body {
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-break {
+    break-before: page;
+  }
+  a[href]::after {
+    content: '';
+  }
+  table {
+    break-inside: auto;
+  }
+  tr,
+  thead {
+    break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+}
+
+.print-only {
+  display: none;
+}

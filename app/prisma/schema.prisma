@@ -1,0 +1,182 @@
+// Skema Sistem Pencatatan Keuangan Iuran Warga - Cluster Salaam Citayam
+// Ref: SALAAM.PRD.FIN-01 v1.0
+//
+// Catatan desain: semua nominal disimpan sebagai Int dalam satuan RUPIAH PENUH
+// (tanpa sen). Menghindari galat pembulatan floating point pada perhitungan saldo.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Master data
+// ---------------------------------------------------------------------------
+
+/// Unit rumah (34 unit). Sumber kebenaran untuk siapa wajib bayar apa.
+model Unit {
+  id        String  @id @default(cuid())
+  /// Kode unit dipakai juga sebagai username login warga, mis. "A1", "B1a"
+  kode      String  @unique
+  blok      String
+  nomor     String
+  namaWarga String
+  kontak    String?
+
+  /// Nomor urut tampilan (kolom "No" 1-34 pada daftar warga).
+  /// Diperlukan karena kode unit asli tidak ber-nol-depan dan mengandung
+  /// sufiks huruf ("B1a"), sehingga pengurutan teks menghasilkan
+  /// A1, A10, A11, A12, A2 — bukan urutan yang dikenali warga.
+  urutan Int @default(0)
+
+  /// Tarif per unit dibuat per-unit (bukan konstanta global) karena data historis
+  /// menunjukkan ada warga yang hanya membayar komponen security. Lihat PRD bag. 10.
+  tarifSampah   Int @default(35000)
+  tarifSecurity Int @default(140000)
+
+  /// Bulan pertama unit ini wajib membayar (format "YYYY-MM").
+  /// Tunggakan tidak dihitung untuk periode sebelum tanggal ini.
+  mulaiPeriode String
+
+  aktif     Boolean  @default(true)
+  catatan   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        User[]
+  transactions Transaction[]
+
+  @@index([aktif])
+  @@index([urutan])
+}
+
+
+model User {
+  id       String  @id @default(cuid())
+  /// Login pakai kode unit (warga) atau username (pengurus)
+  username String  @unique
+  nama     String
+  pinHash  String
+  role     String  @default("WARGA")
+  unitId   String?
+  aktif    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  unit               Unit?         @relation(fields: [unitId], references: [id])
+  transaksiDiajukan  Transaction[] @relation("SubmittedBy")
+  transaksiDiperiksa Transaction[] @relation("ReviewedBy")
+  auditLogs          AuditLog[]
+
+  @@index([unitId])
+}
+
+// ---------------------------------------------------------------------------
+// Ledger
+// ---------------------------------------------------------------------------
+
+/// Satu baris buku kas. Menggantikan satu baris di Google Sheets.
+/// Hanya transaksi berstatus APPROVED yang memengaruhi saldo resmi (F-03, F-06).
+model Transaction {
+  id String @id @default(cuid())
+
+  /// "MASUK" | "KELUAR"
+  jenis     String
+  tanggal   DateTime
+  /// Nominal total transaksi, rupiah penuh, selalu positif.
+  nominal   Int
+  uraian    String
+  /// "TRANSFER" | "TUNAI"
+  metode    String  @default("TRANSFER")
+  /// Kategori pengeluaran (F-05). Null untuk transaksi masuk.
+  kategori  String?
+  /// Unit pembayar. Null untuk pengeluaran atau pemasukan non-iuran.
+  unitId    String?
+  /// Catatan bebas, ekuivalen kolom "Remark" di Google Sheets.
+  remark    String?
+
+  /// "PENDING" | "APPROVED" | "REJECTED" | "VOID"
+  status String @default("PENDING")
+
+  /// Bukti transfer (F-01, opsional). Disimpan sebagai data URL hasil kompresi
+  /// di sisi klien agar tidak butuh object storage berbayar.
+  buktiUrl String?
+
+  submittedById String?
+  reviewedById  String?
+  reviewedAt    DateTime?
+  alasanTolak   String?
+
+  /// Soft delete saja — data kas tidak boleh hilang permanen (NF-04).
+  dibatalkanPada    DateTime?
+  alasanPembatalan  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  unit        Unit?  @relation(fields: [unitId], references: [id])
+  submittedBy User?  @relation("SubmittedBy", fields: [submittedById], references: [id])
+  reviewedBy  User?  @relation("ReviewedBy", fields: [reviewedById], references: [id])
+
+  alokasi Allocation[]
+
+  @@index([status, tanggal])
+  @@index([unitId, status])
+  @@index([jenis, tanggal])
+}
+
+/// Pemetaan eksplisit satu transaksi ke satu atau lebih periode iuran (F-02).
+/// Inilah yang menggantikan teks bebas "NOVEMBER DESEMBER 2025" di kolom Remark,
+/// dan yang membuat status lunas/tunggak bisa dihitung, bukan ditafsirkan.
+model Allocation {
+  id            String @id @default(cuid())
+  transactionId String
+
+  /// Periode yang dibayar, format "YYYY-MM"
+  periode String
+  /// "SAMPAH" | "SECURITY"
+  jenisIuran String
+  /// Bagian nominal transaksi yang dialokasikan ke periode+jenis ini.
+  /// Total seluruh alokasi tidak boleh melebihi Transaction.nominal.
+  nominal Int
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@unique([transactionId, periode, jenisIuran])
+  @@index([periode, jenisIuran])
+}
+
+// ---------------------------------------------------------------------------
+// Audit & pengaturan
+// ---------------------------------------------------------------------------
+
+/// Jejak audit tak terhapus (F-10, NF-04).
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actorNama String
+  aksi      String
+  entitas   String
+  entitasId String?
+  ringkasan String
+  /// Snapshot JSON sebelum/sesudah untuk penelusuran sengketa.
+  detail    String?
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([createdAt])
+  @@index([entitas, entitasId])
+}
+
+/// Key-value sederhana untuk saldo awal, nama cluster, dsb.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
