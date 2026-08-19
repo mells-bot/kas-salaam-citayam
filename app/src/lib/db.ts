@@ -6,21 +6,28 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
 const logLevels = process.env.NODE_ENV === 'development' ? (['warn', 'error'] as const) : (['error'] as const)
 
 /**
- * Lokal (dan sebelum Turso disiapkan): PrismaClient biasa membaca file SQLite
- * langsung lewat DATABASE_URL="file:./dev.db" — tanpa driver adapter.
+ * Lokal: PrismaClient biasa membaca file SQLite langsung lewat
+ * DATABASE_URL="file:./dev.db" — tanpa driver adapter.
  *
- * Produksi (Turso): begitu TURSO_AUTH_TOKEN diisi, dipakai driver adapter
- * libsql supaya bisa terhubung ke database jarak jauh. DATABASE_URL harus
- * diisi URL "libsql://..." pada mode ini. Dialeknya tetap SQLite yang sama,
- * jadi skema dan seluruh kueri Prisma tidak berubah sama sekali.
+ * Produksi (Turso): dipakai driver adapter libsql lewat TURSO_DATABASE_URL +
+ * TURSO_AUTH_TOKEN yang TERPISAH dari DATABASE_URL.
+ *
+ * Kenapa dipisah: Prisma memvalidasi bahwa datasource provider "sqlite" pada
+ * schema.prisma nilainya harus berformat "file:...", terlepas dari driver
+ * adapter apa pun yang dipakai saat runtime. Kalau DATABASE_URL diisi
+ * "libsql://...", perintah CLI seperti `prisma db push`/`generate` gagal
+ * validasi skema (P1012) sebelum sempat memakai adapter sama sekali. Jadi
+ * DATABASE_URL tetap "file:./dev.db" di semua environment (nilainya tidak
+ * pernah benar-benar dipakai untuk konek saat adapter aktif), dan koneksi
+ * sungguhan ke Turso lewat TURSO_DATABASE_URL. Dialeknya tetap SQLite yang
+ * sama, jadi skema dan seluruh kueri Prisma tidak berubah sama sekali.
  */
 function buatClient() {
-  const url = process.env.DATABASE_URL
+  const tursoUrl = process.env.TURSO_DATABASE_URL
   const authToken = process.env.TURSO_AUTH_TOKEN
 
-  if (authToken) {
-    if (!url) throw new Error('TURSO_AUTH_TOKEN diisi tapi DATABASE_URL kosong. Isi dengan URL libsql://...')
-    const adapter = new PrismaLibSql({ url, authToken })
+  if (tursoUrl && authToken) {
+    const adapter = new PrismaLibSql({ url: tursoUrl, authToken })
     return new PrismaClient({ adapter, log: [...logLevels] })
   }
 

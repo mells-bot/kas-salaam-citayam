@@ -205,54 +205,75 @@ lebih buruk daripada tidak mengimpor.
 
 ---
 
-## Naik ke produksi (gratis)
+## Naik ke produksi (gratis) — sudah disiapkan & teruji
 
-### 1. Database — Turso
+Repo ini sudah dikonfigurasi untuk Turso lewat driver adapter Prisma (`@prisma/adapter-libsql`,
+dipasang di `src/lib/db.ts` dan `prisma.config.ts`). Berikut langkah bila mengulang dari awal atau
+memindahkan ke akun Turso lain.
 
-Turso memakai dialek SQLite yang sama, jadi skema dan kueri tidak berubah.
+### 1. Buat database Turso
 
-```bash
-npm i -g @tursodatabase/cli
-turso auth signup
-turso db create kas-salaam
-turso db show kas-salaam --url         # -> libsql://...
-turso db tokens create kas-salaam      # -> token
-```
+Lewat dashboard di https://turso.tech (sign up gratis), buat database baru, lalu ambil dua nilai:
+URL koneksi (`libsql://nama-db.turso.io`) dan sebuah token akses.
 
-Untuk memakai Turso, pasang driver adapter Prisma dan arahkan `DATABASE_URL` ke URL libsql:
+### 2. Tiga environment variable — dan kenapa dipisah begini
 
-```bash
-npm i @prisma/adapter-libsql @libsql/client
-```
+| Variabel | Isi lokal | Isi produksi |
+|---|---|---|
+| `DATABASE_URL` | `file:./dev.db` | **tetap** `file:./dev.db` |
+| `TURSO_DATABASE_URL` | *(kosong)* | `libsql://nama-db.turso.io` |
+| `TURSO_AUTH_TOKEN` | *(kosong)* | token dari dashboard Turso |
+| `SESSION_SECRET` | string acak ≥32 karakter | string acak ≥32 karakter **berbeda** dari lokal |
 
-Lalu di `src/lib/db.ts`, ganti pembuatan `PrismaClient` dengan versi beradaptor bila
-`TURSO_AUTH_TOKEN` tersedia. Untuk pengembangan lokal, biarkan `DATABASE_URL="file:./dev.db"` —
-tidak ada yang perlu diubah.
-
-Alternatif yang lebih sederhana bila tidak ingin menyentuh adapter: pakai **Postgres gratis (Neon)**
-dan ubah `provider = "postgresql"` di `prisma/schema.prisma`. Seluruh kode aplikasi tetap sama;
-hanya baris provider yang berubah.
-
-### 2. Aplikasi — Vercel
-
-```bash
-git init && git add -A && git commit -m "Sistem kas Cluster Salaam Citayam"
-# push ke GitHub, lalu impor repo di vercel.com
-```
-
-Isi environment variable di Vercel:
-
-| Variabel | Nilai |
-|---|---|
-| `DATABASE_URL` | URL libsql/Postgres produksi |
-| `TURSO_AUTH_TOKEN` | token Turso (bila memakai Turso) |
-| `SESSION_SECRET` | string acak ≥32 karakter |
+**`DATABASE_URL` sengaja tetap `file:./dev.db` bahkan di produksi.** Prisma memvalidasi bahwa
+nilai datasource untuk provider `sqlite` harus berformat `file:...` sebelum sempat
+mempertimbangkan driver adapter apa pun — mengisinya dengan `libsql://...` membuat `prisma
+generate`/`db push` gagal validasi skema (P1012) duluan. Karena itu koneksi Turso sungguhan lewat
+`TURSO_DATABASE_URL` yang terpisah; nilai `DATABASE_URL` sendiri tidak pernah benar-benar dipakai
+untuk konek saat kedua variabel Turso terisi.
 
 Generate `SESSION_SECRET`:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+### 3. Terapkan skema + isi data awal ke Turso
+
+Dari komputer Anda, jalankan dengan tiga variabel di atas diisi (jangan taruh nilai Turso di `.env`
+yang dipakai lokal — set langsung di shell atau lewat `.env.production.local`):
+
+```bash
+# PowerShell
+$env:DATABASE_URL="file:./dev.db"
+$env:TURSO_DATABASE_URL="libsql://nama-db.turso.io"
+$env:TURSO_AUTH_TOKEN="token-dari-dashboard-turso"
+npx prisma db push        # menerapkan skema ke Turso
+npx tsx prisma/seed.ts    # mengisi 34 data warga + data contoh
+```
+
+`prisma.config.ts` otomatis mendeteksi kedua variabel Turso dan mengalihkan Prisma CLI ke mesin
+skema berbasis JS (`engine: "js"`) lewat driver adapter — tanpa ini, `db push` diam-diam akan
+menyentuh `dev.db` lokal alih-alih Turso. Verifikasi datanya benar-benar di Turso (bukan cache
+lokal) dengan menghapus `prisma/dev.db` sebelum menjalankan kueri percobaan.
+
+### 4. Aplikasi — Vercel
+
+Push repo ini ke GitHub, lalu **Add New → Project** di vercel.com dan pilih repo tersebut.
+
+Pengaturan penting sebelum deploy pertama:
+
+- **Root Directory** → `app` (kode Next.js ada di subfolder ini, bukan di root repo)
+- **Environment Variables** → isi keempatnya dari tabel di langkah 2 (nilai produksi)
+
+Klik **Deploy**. Setiap push berikutnya ke branch `main` otomatis men-deploy ulang.
+
+### Alternatif tanpa driver adapter: Postgres (Neon)
+
+Bila suatu saat ingin melepas driver adapter Turso sepenuhnya, opsi paling sederhana adalah
+Postgres gratis (Neon): ubah `provider = "postgresql"` di `prisma/schema.prisma`, hapus
+`prisma.config.ts` dan pemanggilan adapter di `src/lib/db.ts`, isi `DATABASE_URL` dengan connection
+string Neon langsung. Seluruh kode aplikasi lainnya tetap sama.
 
 ### 3. Sebelum dipakai sungguhan
 

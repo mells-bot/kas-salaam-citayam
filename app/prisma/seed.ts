@@ -9,10 +9,12 @@
  * di PRD: A6 (Bp. Fakhri Ihsan) untuk pola rapel "FAHRI", dan A12 (Bp. Santo)
  * untuk pola bayar komponen security saja.
  */
-import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import { db } from '../src/lib/db'
 
-const db = new PrismaClient()
+// Memakai db dari src/lib/db.ts (bukan `new PrismaClient()` langsung) supaya
+// seed ini otomatis lewat driver adapter Turso saat TURSO_AUTH_TOKEN diisi —
+// jadi skrip yang sama bisa dipakai untuk seed lokal maupun produksi.
 
 const TARIF_SAMPAH = 35_000
 const TARIF_SECURITY = 140_000
