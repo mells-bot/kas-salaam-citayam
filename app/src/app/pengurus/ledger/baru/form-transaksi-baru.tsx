@@ -10,7 +10,6 @@ import {
 } from '../../actions'
 import { PemilihAlokasi, type BarisTertagih } from '@/components/form-alokasi'
 import { UnggahBukti } from '@/components/unggah-bukti'
-import { KATEGORI_PENGELUARAN } from '@/lib/constants'
 import { KELAS_INPUT, Label, Peringatan, Tombol } from '@/components/ui'
 
 interface UnitPilihan {
@@ -36,7 +35,7 @@ function tanggalHariIni() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export default function FormTransaksiBaru({ unit }: { unit: UnitPilihan[] }) {
+export default function FormTransaksiBaru({ unit, kategori }: { unit: UnitPilihan[]; kategori: string[] }) {
   const [tab, setTab] = useState<Tab>('PENGELUARAN')
 
   const [hasilKeluar, aksiKeluar] = useActionState<HasilAksi | null, FormData>(aksiCatatPengeluaran, null)
@@ -105,13 +104,16 @@ export default function FormTransaksiBaru({ unit }: { unit: UnitPilihan[] }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label wajib>Kategori</Label>
-              <select name="kategori" required defaultValue={KATEGORI_PENGELUARAN[0]} className={KELAS_INPUT}>
-                {KATEGORI_PENGELUARAN.map((k) => (
+              <select name="kategori" required defaultValue={kategori[0] ?? ''} className={KELAS_INPUT}>
+                {kategori.map((k) => (
                   <option key={k} value={k}>
                     {k}
                   </option>
                 ))}
               </select>
+              <p className="mt-1 text-xs text-ink-muted">
+                Kelola daftar kategori lewat menu Pengaturan.
+              </p>
             </div>
             <div>
               <Label wajib>Metode</Label>

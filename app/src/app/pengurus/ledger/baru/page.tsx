@@ -4,6 +4,7 @@ import { wajibPengurus } from '@/lib/auth'
 import { ROLES } from '@/lib/constants'
 import { kartuIuranSemuaUnit } from '@/lib/iuran'
 import { periodeSekarang } from '@/lib/periode'
+import { daftarKategoriAktif } from '@/lib/kategori'
 import { Kartu, Peringatan } from '@/components/ui'
 import FormTransaksiBaru from './form-transaksi-baru'
 
@@ -44,7 +45,10 @@ export default async function HalamanTransaksiBaru() {
       })),
   }))
 
-  const jumlahUnitAda = await db.unit.count({ where: { aktif: true } })
+  const [jumlahUnitAda, kategori] = await Promise.all([
+    db.unit.count({ where: { aktif: true } }),
+    daftarKategoriAktif(),
+  ])
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -64,8 +68,14 @@ export default async function HalamanTransaksiBaru() {
         </Peringatan>
       )}
 
+      {kategori.length === 0 && (
+        <Peringatan nada="kritis" judul="Belum ada kategori pengeluaran">
+          Tambahkan minimal satu kategori lewat menu Pengaturan sebelum mencatat pengeluaran.
+        </Peringatan>
+      )}
+
       <Kartu>
-        <FormTransaksiBaru unit={unitDenganTagihan} />
+        <FormTransaksiBaru unit={unitDenganTagihan} kategori={kategori.map((k) => k.nama)} />
       </Kartu>
     </div>
   )

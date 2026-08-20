@@ -35,8 +35,11 @@ export const JENIS_IURAN_LABEL: Record<string, string> = {
 
 export const METODE = { TRANSFER: 'Transfer', TUNAI: 'Tunai' } as const
 
-/// Kategori pengeluaran sesuai F-05.
-export const KATEGORI_PENGELUARAN = [
+/// Kategori pengeluaran bawaan (F-05), dipakai untuk mengisi tabel
+/// KategoriPengeluaran saat seed pertama kali. Bukan lagi daftar tertutup —
+/// bendahara bisa menambah/menonaktifkan kategori lewat Pengaturan; lihat
+/// lib/kategori.ts.
+export const KATEGORI_PENGELUARAN_BAWAAN = [
   'Honor Security',
   'Honor Kebersihan',
   'Iuran Sampah Pihak Ketiga',

@@ -2,8 +2,9 @@ import Link from 'next/link'
 import { db } from '@/lib/db'
 import { wajibPengurus } from '@/lib/auth'
 import { ledgerBerjalan } from '@/lib/kas'
-import { JENIS_IURAN_LABEL, JENIS_TRANSAKSI, KATEGORI_PENGELUARAN, ROLES, STATUS } from '@/lib/constants'
+import { JENIS_IURAN_LABEL, JENIS_TRANSAKSI, ROLES, STATUS } from '@/lib/constants'
 import { labelPeriode, rupiah, tanggalSingkat } from '@/lib/format'
+import { daftarSemuaKategori } from '@/lib/kategori'
 import { Kartu, JudulSeksi, Kosong, Nominal, Peringatan } from '@/components/ui'
 import TombolBatalkan from './tombol-batalkan'
 
@@ -29,11 +30,14 @@ export default async function HalamanLedger({ searchParams }: Params) {
   const sampai = sampaiMentah ? new Date(sampaiMentah.getTime() + 24 * 60 * 60 * 1000 - 1) : undefined
 
   const jenis = sp.jenis === 'MASUK' || sp.jenis === 'KELUAR' ? sp.jenis : undefined
-  const kategori = sp.kategori && KATEGORI_PENGELUARAN.includes(sp.kategori as never) ? sp.kategori : undefined
+  // Filter tidak perlu divalidasi terhadap daftar kategori aktif — transaksi
+  // lama boleh tetap difilter walau kategorinya sudah dinonaktifkan (NF-04).
+  const kategori = sp.kategori?.trim() || undefined
 
-  const [{ saldoPembuka, baris, saldoPenutup }, unitList] = await Promise.all([
+  const [{ saldoPembuka, baris, saldoPenutup }, unitList, semuaKategori] = await Promise.all([
     ledgerBerjalan({ dari, sampai, jenis, kategori, unitId: sp.unit || undefined }),
     db.unit.findMany({ orderBy: [{ urutan: 'asc' }, { kode: 'asc' }], select: { id: true, kode: true, namaWarga: true } }),
+    daftarSemuaKategori(),
   ])
 
   const totalMasuk = baris.reduce((s, b) => s + b.debit, 0)
@@ -119,9 +123,10 @@ export default async function HalamanLedger({ searchParams }: Params) {
               className="w-full rounded-lg border border-baseline bg-white px-2.5 py-1.5 text-sm"
             >
               <option value="">Semua</option>
-              {KATEGORI_PENGELUARAN.map((k) => (
-                <option key={k} value={k}>
-                  {k}
+              {semuaKategori.map((k) => (
+                <option key={k.id} value={k.nama}>
+                  {k.nama}
+                  {!k.aktif ? ' (nonaktif)' : ''}
                 </option>
               ))}
             </select>

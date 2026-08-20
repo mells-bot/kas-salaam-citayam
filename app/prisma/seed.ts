@@ -11,6 +11,7 @@
  */
 import bcrypt from 'bcryptjs'
 import { db } from '../src/lib/db'
+import { KATEGORI_PENGELUARAN_BAWAAN } from '../src/lib/constants'
 
 // Memakai db dari src/lib/db.ts (bukan `new PrismaClient()` langsung) supaya
 // seed ini otomatis lewat driver adapter Turso saat TURSO_AUTH_TOKEN diisi —
@@ -112,6 +113,7 @@ async function main() {
   await db.user.deleteMany()
   await db.unit.deleteMany()
   await db.setting.deleteMany()
+  await db.kategoriPengeluaran.deleteMany()
 
   // --- Pengaturan ---------------------------------------------------------
   // PRD bag. 8 menyarankan mulai fresh dengan saldo akhir dari Google Sheets.
@@ -123,6 +125,11 @@ async function main() {
       { key: 'nama_cluster', value: 'Cluster Salaam Citayam' },
     ],
   })
+
+  await db.kategoriPengeluaran.createMany({
+    data: KATEGORI_PENGELUARAN_BAWAAN.map((nama, urutan) => ({ nama, urutan })),
+  })
+  console.log(`  ${KATEGORI_PENGELUARAN_BAWAAN.length} kategori pengeluaran dibuat`)
 
   // --- Unit & akun warga --------------------------------------------------
   const pinWarga = await bcrypt.hash(PIN_DEFAULT_WARGA, 10)

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { JENIS_IURAN, KATEGORI_PENGELUARAN } from './constants'
+import { JENIS_IURAN } from './constants'
 import { isPeriodeValid } from './periode'
 
 const nominalPositif = z.coerce
@@ -69,7 +69,10 @@ export const pengeluaranSchema = z.object({
   tanggal: tanggalTransaksi,
   nominal: nominalPositif,
   uraian: z.string().trim().min(3, 'Uraian minimal 3 karakter').max(300),
-  kategori: z.enum(KATEGORI_PENGELUARAN),
+  // Keanggotaan (harus salah satu kategori AKTIF) divalidasi di server action,
+  // bukan lewat enum statis di sini — daftar kategori sekarang dikelola
+  // bendahara lewat Pengaturan, jadi tidak bisa diketahui saat kode ditulis.
+  kategori: z.string().trim().min(1, 'Kategori wajib dipilih').max(100),
   metode: z.enum(['TRANSFER', 'TUNAI']),
   remark: z.string().max(500).optional().or(z.literal('')),
   buktiUrl: z.string().max(3_000_000).optional().or(z.literal('')),
@@ -178,4 +181,12 @@ export const gajianSchema = z.object({
   gajiPokok: nominalPositif,
   // 0 diperbolehkan (tidak ada potongan kasbon bulan ini).
   totalPotongan: z.coerce.number().int().min(0).max(1_000_000_000),
+})
+
+// ---------------------------------------------------------------------------
+// Kategori pengeluaran
+// ---------------------------------------------------------------------------
+
+export const kategoriPengeluaranSchema = z.object({
+  nama: z.string().trim().min(2, 'Nama kategori minimal 2 karakter').max(100),
 })

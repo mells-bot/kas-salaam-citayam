@@ -325,3 +325,17 @@ model Gajian {
   @@unique([karyawanId, periode])
   @@index([periode])
 }
+
+/// Kategori pengeluaran (F-05), dikelola bendahara lewat Pengaturan.
+/// Transaction.kategori tetap kolom teks bebas (tidak diubah jadi FK) supaya
+/// menonaktifkan/menambah kategori tidak pernah mengubah data transaksi lama —
+/// nama kategori pada transaksi lama tetap tersimpan apa adanya (NF-04).
+model KategoriPengeluaran {
+  id        String   @id @default(cuid())
+  nama      String   @unique
+  aktif     Boolean  @default(true)
+  urutan    Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([aktif])
+}

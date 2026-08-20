@@ -1,6 +1,5 @@
 import { sesiSaatIni, isPengurus } from '@/lib/auth'
 import { ledgerBerjalan } from '@/lib/kas'
-import { KATEGORI_PENGELUARAN } from '@/lib/constants'
 import { labelPeriode } from '@/lib/format'
 
 /**
@@ -43,8 +42,10 @@ export async function GET(request: Request) {
   const sampai = sampaiMentah ? new Date(sampaiMentah.getTime() + 24 * 60 * 60 * 1000 - 1) : undefined
   const jenisParam = p.get('jenis')
   const jenis = jenisParam === 'MASUK' || jenisParam === 'KELUAR' ? jenisParam : undefined
-  const kategoriParam = p.get('kategori')
-  const kategori = kategoriParam && KATEGORI_PENGELUARAN.includes(kategoriParam as never) ? kategoriParam : undefined
+  // Sama seperti halaman Buku Kas: tidak divalidasi terhadap daftar kategori
+  // aktif, supaya transaksi lama tetap bisa diekspor walau kategorinya sudah
+  // dinonaktifkan (NF-04).
+  const kategori = p.get('kategori')?.trim() || undefined
 
   const { saldoPembuka, baris, saldoPenutup } = await ledgerBerjalan({
     dari,

@@ -6,7 +6,7 @@ import { hashPin, wajibBendahara, wajibPengurus } from '@/lib/auth'
 import { catatAudit } from '@/lib/audit'
 import { JENIS_TRANSAKSI, SETTING_SALDO_AWAL, STATUS } from '@/lib/constants'
 import { labelPeriode, rupiah } from '@/lib/format'
-import { laporanBayarSchema, pemasukanLainSchema, pengeluaranSchema, unitSchema } from '@/lib/validasi'
+import { kategoriPengeluaranSchema, laporanBayarSchema, pemasukanLainSchema, pengeluaranSchema, unitSchema } from '@/lib/validasi'
 import { simpanSetting } from '@/lib/setting'
 
 export interface HasilAksi {
@@ -19,8 +19,10 @@ function segarkan() {
   revalidatePath('/pengurus')
   revalidatePath('/pengurus/verifikasi')
   revalidatePath('/pengurus/ledger')
+  revalidatePath('/pengurus/ledger/baru')
   revalidatePath('/pengurus/tunggakan')
   revalidatePath('/pengurus/laporan')
+  revalidatePath('/pengurus/pengaturan')
   revalidatePath('/warga')
   revalidatePath('/warga/riwayat')
 }
@@ -167,6 +169,11 @@ export async function aksiCatatPengeluaran(_prev: HasilAksi | null, formData: Fo
   })
   if (!parsed.success) return { galat: parsed.error.issues[0].message }
   const d = parsed.data
+
+  // Keanggotaan kategori divalidasi di sini (bukan lewat enum statis) karena
+  // daftarnya sekarang dikelola bendahara lewat Pengaturan.
+  const kategoriValid = await db.kategoriPengeluaran.findFirst({ where: { nama: d.kategori, aktif: true } })
+  if (!kategoriValid) return { galat: `Kategori "${d.kategori}" tidak ditemukan atau sudah nonaktif.` }
 
   const trx = await db.transaction.create({
     data: {
@@ -458,4 +465,78 @@ export async function aksiSimpanPengaturan(_prev: HasilAksi | null, formData: Fo
 
   segarkan()
   return { ok: true, pesan: 'Pengaturan disimpan.' }
+}
+
+// ---------------------------------------------------------------------------
+// Kategori pengeluaran
+// ---------------------------------------------------------------------------
+
+export async function aksiTambahKategori(_prev: HasilAksi | null, formData: FormData): Promise<HasilAksi> {
+  const sesi = await wajibBendahara()
+
+  const parsed = kategoriPengeluaranSchema.safeParse({ nama: formData.get('nama') })
+  if (!parsed.success) return { galat: parsed.error.issues[0].message }
+  const { nama } = parsed.data
+
+  // Perbandingan case-insensitive supaya "operasional" tidak dibuat terpisah
+  // dari "Operasional" yang sudah ada.
+  const bentrokRows = await db.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "KategoriPengeluaran" WHERE LOWER(nama) = LOWER(${nama})
+  `
+  if (bentrokRows[0]) {
+    const existing = await db.kategoriPengeluaran.findUnique({ where: { id: bentrokRows[0].id } })
+    if (existing && !existing.aktif) {
+      await db.kategoriPengeluaran.update({ where: { id: existing.id }, data: { aktif: true } })
+      await catatAudit({
+        aktor: sesi,
+        aksi: 'AKTIFKAN_KATEGORI',
+        entitas: 'KategoriPengeluaran',
+        entitasId: existing.id,
+        ringkasan: `Mengaktifkan kembali kategori "${existing.nama}"`,
+      })
+      segarkan()
+      return { ok: true, pesan: `Kategori "${existing.nama}" (sebelumnya nonaktif) diaktifkan kembali.` }
+    }
+    return { galat: `Kategori "${existing?.nama ?? nama}" sudah ada.` }
+  }
+
+  const jumlah = await db.kategoriPengeluaran.count()
+  const kategori = await db.kategoriPengeluaran.create({ data: { nama, urutan: jumlah } })
+
+  await catatAudit({
+    aktor: sesi,
+    aksi: 'TAMBAH_KATEGORI',
+    entitas: 'KategoriPengeluaran',
+    entitasId: kategori.id,
+    ringkasan: `Menambah kategori pengeluaran "${nama}"`,
+  })
+
+  segarkan()
+  return { ok: true, pesan: `Kategori "${nama}" ditambahkan.` }
+}
+
+/// Nonaktifkan saja, tidak dihapus — kategori pada transaksi lama harus tetap
+/// tampil apa adanya (NF-04), hanya tidak muncul lagi untuk transaksi baru.
+export async function aksiNonaktifkanKategori(_prev: HasilAksi | null, formData: FormData): Promise<HasilAksi> {
+  const sesi = await wajibBendahara()
+  const id = String(formData.get('id') ?? '')
+
+  const kategori = await db.kategoriPengeluaran.findUnique({ where: { id } })
+  if (!kategori) return { galat: 'Kategori tidak ditemukan.' }
+  if (!kategori.aktif) return { galat: 'Kategori ini sudah nonaktif.' }
+
+  const dipakai = await db.transaction.count({ where: { kategori: kategori.nama } })
+
+  await db.kategoriPengeluaran.update({ where: { id }, data: { aktif: false } })
+
+  await catatAudit({
+    aktor: sesi,
+    aksi: 'NONAKTIFKAN_KATEGORI',
+    entitas: 'KategoriPengeluaran',
+    entitasId: id,
+    ringkasan: `Menonaktifkan kategori "${kategori.nama}"${dipakai > 0 ? ` (sudah dipakai ${dipakai} transaksi, tetap tampil di riwayat)` : ''}`,
+  })
+
+  segarkan()
+  return { ok: true, pesan: `Kategori "${kategori.nama}" dinonaktifkan.` }
 }

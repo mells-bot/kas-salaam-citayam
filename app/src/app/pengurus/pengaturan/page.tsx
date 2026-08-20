@@ -3,9 +3,11 @@ import { wajibPengurus } from '@/lib/auth'
 import { ROLES, SETTING_SALDO_AWAL } from '@/lib/constants'
 import { ambilSetting } from '@/lib/setting'
 import { ringkasanKas } from '@/lib/kas'
+import { daftarSemuaKategori } from '@/lib/kategori'
 import { rupiah } from '@/lib/format'
 import { Kartu, JudulSeksi, Peringatan } from '@/components/ui'
 import FormPengaturan from './form-pengaturan'
+import PanelKategori from './panel-kategori'
 
 export const metadata = { title: 'Pengaturan · Kas Cluster' }
 
@@ -14,11 +16,12 @@ export default async function HalamanPengaturan() {
   // Pengaturan mengubah angka saldo dasar, jadi dibatasi ke bendahara saja.
   if (sesi.role !== ROLES.BENDAHARA) redirect('/pengurus')
 
-  const [saldoAwal, nama, tanggalSaldoAwal, kas] = await Promise.all([
+  const [saldoAwal, nama, tanggalSaldoAwal, kas, kategori] = await Promise.all([
     ambilSetting(SETTING_SALDO_AWAL, '0'),
     ambilSetting('nama_cluster', 'Cluster Salaam Citayam'),
     ambilSetting('tanggal_saldo_awal', ''),
     ringkasanKas(),
+    daftarSemuaKategori(),
   ])
 
   return (
@@ -41,6 +44,13 @@ export default async function HalamanPengaturan() {
           namaCluster={nama}
           tanggalSaldoAwal={tanggalSaldoAwal}
         />
+      </Kartu>
+
+      <Kartu>
+        <JudulSeksi keterangan="Kategori nonaktif tidak muncul lagi di form pengeluaran baru, tapi transaksi lama yang memakainya tetap tersimpan apa adanya.">
+          Kategori pengeluaran
+        </JudulSeksi>
+        <PanelKategori kategori={kategori} />
       </Kartu>
 
       <Kartu>
