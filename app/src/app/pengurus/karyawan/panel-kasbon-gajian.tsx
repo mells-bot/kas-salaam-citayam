@@ -80,11 +80,19 @@ function FormGajian({
           min={0}
           max={Math.min(gajiPokok, totalKasbonBelumLunas)}
           value={potongan}
-          onChange={(e) => setPotongan(Number(e.target.value) || 0)}
-          className={`${KELAS_INPUT} tabular`}
+          // readOnly (bukan disabled) supaya nilainya tetap terkirim saat submit —
+          // input disabled tidak ikut terkirim dalam FormData sama sekali.
+          readOnly={totalKasbonBelumLunas === 0}
+          // Dibatasi di sini juga (bukan cuma lewat atribut max) supaya nilai
+          // tidak sempat tersimpan tidak valid dan bikin submit gagal tanpa
+          // penjelasan yang jelas ke bendahara.
+          onChange={(e) => setPotongan(Math.max(0, Math.min(Number(e.target.value) || 0, Math.min(gajiPokok, totalKasbonBelumLunas))))}
+          className={`${KELAS_INPUT} tabular read-only:bg-plane read-only:text-ink-muted`}
         />
         <p className="mt-1 text-xs text-ink-muted">
-          Sisa kasbon belum lunas: {rupiah(totalKasbonBelumLunas)}. Saran potongan: {rupiah(saran)} (bisa diubah).
+          {totalKasbonBelumLunas === 0
+            ? 'Karyawan ini tidak punya kasbon aktif, jadi tidak ada yang bisa dipotong bulan ini.'
+            : `Sisa kasbon belum lunas: ${rupiah(totalKasbonBelumLunas)}. Saran potongan: ${rupiah(saran)} (bisa diubah, maksimal sebesar sisa kasbon atau gaji pokok).`}
         </p>
       </div>
 
