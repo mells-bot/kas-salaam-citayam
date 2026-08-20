@@ -116,3 +116,51 @@ export const gantiPinSchema = z
     path: ['konfirmasi'],
     message: 'Konfirmasi PIN tidak sama dengan PIN baru',
   })
+
+// ---------------------------------------------------------------------------
+// Tagihan tambahan (THR, dsb.)
+// ---------------------------------------------------------------------------
+
+export const tagihanTambahanSchema = z.object({
+  nama: z.string().trim().min(3, 'Nama tagihan minimal 3 karakter').max(150),
+  periode: z.string().refine(isPeriodeValid, { message: 'Periode harus format YYYY-MM' }),
+  nominalPerUnit: nominalPositif,
+  keterangan: z.string().max(500).optional().or(z.literal('')),
+})
+
+export const laporanTambahanSchema = z.object({
+  tagihanTambahanId: z.string().min(1, 'Tagihan tidak valid'),
+  tanggal: tanggalTransaksi,
+  nominal: nominalPositif,
+  metode: z.enum(['TRANSFER', 'TUNAI']),
+  remark: z.string().max(500).optional().or(z.literal('')),
+  buktiUrl: z.string().max(3_000_000).optional().or(z.literal('')),
+})
+
+// ---------------------------------------------------------------------------
+// Karyawan, kasbon & gajian
+// ---------------------------------------------------------------------------
+
+export const karyawanSchema = z.object({
+  nama: z.string().trim().min(2, 'Nama minimal 2 karakter').max(100),
+  jabatan: z.enum(['SECURITY', 'KEBERSIHAN']),
+  gajiPokok: nominalPositif,
+  aktif: z.coerce.boolean(),
+  catatan: z.string().max(500).optional().or(z.literal('')),
+})
+
+export const kasbonSchema = z.object({
+  karyawanId: z.string().min(1, 'Pilih karyawan'),
+  tanggal: tanggalTransaksi,
+  nominal: nominalPositif,
+  keterangan: z.string().max(300).optional().or(z.literal('')),
+})
+
+export const gajianSchema = z.object({
+  karyawanId: z.string().min(1, 'Pilih karyawan'),
+  periode: z.string().refine(isPeriodeValid, { message: 'Periode harus format YYYY-MM' }),
+  tanggal: tanggalTransaksi,
+  gajiPokok: nominalPositif,
+  // 0 diperbolehkan (tidak ada potongan kasbon bulan ini).
+  totalPotongan: z.coerce.number().int().min(0).max(1_000_000_000),
+})

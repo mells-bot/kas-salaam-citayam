@@ -16,7 +16,7 @@ export default async function HalamanVerifikasi() {
       orderBy: { createdAt: 'asc' },
       include: {
         unit: { select: { kode: true, namaWarga: true, tarifSampah: true, tarifSecurity: true } },
-        alokasi: { orderBy: [{ periode: 'asc' }, { jenisIuran: 'asc' }] },
+        alokasi: { orderBy: [{ periode: 'asc' }, { jenisIuran: 'asc' }], include: { tagihanTambahan: { select: { nama: true } } } },
         submittedBy: { select: { nama: true } },
       },
     }),
@@ -86,7 +86,9 @@ export default async function HalamanVerifikasi() {
                         key={a.id}
                         className="rounded-md bg-plane px-2 py-1 text-xs text-ink-2 ring-1 ring-inset ring-hairline"
                       >
-                        {labelPeriode(a.periode)} · {JENIS_IURAN_LABEL[a.jenisIuran] ?? a.jenisIuran}{' '}
+                        {a.tagihanTambahan
+                          ? a.tagihanTambahan.nama
+                          : `${labelPeriode(a.periode)} · ${JENIS_IURAN_LABEL[a.jenisIuran] ?? a.jenisIuran}`}{' '}
                         <span className="tabular font-medium text-ink">{rupiah(a.nominal)}</span>
                       </li>
                     ))}

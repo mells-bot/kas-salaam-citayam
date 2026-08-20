@@ -183,6 +183,33 @@ begitu ada satu warga yang tidak mau memakai aplikasi.
 | NF-04 | Tidak bisa dihapus permanen, hanya soft delete | Selesai | Kolom `dibatalkanPada`, status `VOID` |
 | NF-05 | Backup otomatis berkala | **Sebagian** | Ekspor CSV manual tersedia; penjadwalan lihat di bawah |
 
+### Fitur tambahan di luar PRD awal
+
+Ditambahkan atas permintaan langsung setelah aplikasi berjalan di produksi:
+
+| Fitur | Status | Letaknya |
+|---|---|---|
+| Tagihan tambahan (THR Ramadan, iuran 17 Agustus, dsb.) | Selesai | `/pengurus/tambahan`, `/warga/tambahan`, `lib/tambahan.ts` |
+| Data karyawan (security & kebersihan) | Selesai | `/pengurus/karyawan` |
+| Kasbon karyawan dengan potongan bertahap | Selesai | model `Kasbon`/`PotonganKasbon`, `lib/gaji.ts` |
+| Proses gajian bulanan per karyawan | Selesai | model `Gajian`, `src/app/pengurus/karyawan/actions.ts` |
+
+**Tagihan tambahan** sengaja dibuat sebagai jalur **terpisah** dari perhitungan iuran bulanan
+(sampah/security) yang sudah berjalan di produksi — bukan menambah komponen ketiga ke kartu iuran
+yang ada. Alasannya: mengubah struktur kartu iuran (`lib/iuran.ts`) berisiko mengganggu perhitungan
+tunggakan 34 unit yang sudah dipakai warga. Sebagai gantinya, tagihan tambahan memakai ulang
+`Transaction`/`Allocation` yang sama (lewat kolom `Allocation.tagihanTambahanId`), sehingga alur
+verifikasi, saldo kas, ledger, dan ekspor CSV otomatis ikut bekerja tanpa kode duplikat — hanya
+"wajib bayar"-nya yang dihitung dari `TagihanTambahan.nominalPerUnit`, bukan dari tarif unit.
+
+**Kasbon** tidak dipotong otomatis penuh dari gaji. Sistem hanya menyarankan nominal potongan
+(minimum antara sisa kasbon dan gaji pokok bulan itu) — bendahara bisa mengubahnya sesuai
+kesepakatan, misalnya mencicil kasbon besar dalam beberapa bulan. Potongan didistribusikan FIFO
+(kasbon paling lama dipotong lebih dulu) dan dicatat rinci per gajian di `PotonganKasbon`, sehingga
+bisa ditelusuri "gajian bulan mana memotong kasbon tanggal berapa". Uang yang benar-benar keluar
+dari kas hanya sebesar `gajiPokok - totalPotongan` — kalau seluruh gaji habis untuk kasbon, tidak
+ada transaksi kas yang dicatat (karena tidak ada uang tunai yang berpindah bulan itu).
+
 ### Belum dikerjakan, dan alasannya
 
 **F-13 (notifikasi keluar aplikasi).** Warga sudah melihat status dan alasan penolakan saat membuka
@@ -304,6 +331,8 @@ app/
     ├── lib/
     │   ├── iuran.ts           Mesin perhitungan lunas/tunggak  <- inti sistem
     │   ├── kas.ts             Saldo, arus kas, ledger berjalan  <- inti sistem
+    │   ├── tambahan.ts        Status bayar tagihan tambahan (THR, dsb.)
+    │   ├── gaji.ts            Ringkasan karyawan, kasbon, saran potongan gajian
     │   ├── periode.ts         Utilitas periode "YYYY-MM"
     │   ├── auth.ts            Sesi, hashing PIN, penjaga peran
     │   ├── audit.ts           Penulis jejak audit
@@ -316,9 +345,11 @@ app/
     │   └── ui.tsx             Kartu, lencana status, tombol, input
     └── app/
         ├── login/
-        ├── warga/             Area warga (status, lapor, riwayat, akun)
+        ├── warga/             Area warga (status, lapor, tagihan tambahan,
+        │                      riwayat, akun)
         ├── pengurus/          Area pengurus (dashboard, verifikasi, tunggakan,
-        │                      buku kas, laporan, data warga, audit, pengaturan)
+        │                      tagihan tambahan, buku kas, karyawan & gaji,
+        │                      laporan, data warga, audit, pengaturan)
         └── api/ekspor/        Ekspor CSV buku kas & tunggakan
 ```
 

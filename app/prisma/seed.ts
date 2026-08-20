@@ -101,7 +101,12 @@ async function main() {
   console.log('Menyiapkan data awal...')
 
   // Idempoten: bersihkan agar seed bisa diulang tanpa duplikasi.
+  await db.potonganKasbon.deleteMany()
+  await db.gajian.deleteMany()
+  await db.kasbon.deleteMany()
+  await db.karyawan.deleteMany()
   await db.allocation.deleteMany()
+  await db.tagihanTambahan.deleteMany()
   await db.transaction.deleteMany()
   await db.auditLog.deleteMany()
   await db.user.deleteMany()
@@ -332,6 +337,33 @@ async function main() {
   }
   console.log(`  ${pengeluaran.length} transaksi pengeluaran dibuat`)
 
+  // --- Karyawan (security & kebersihan) -----------------------------------
+  const daftarKaryawan = [
+    { nama: 'Pa Bambang', jabatan: 'SECURITY', gajiPokok: 1_500_000 },
+    { nama: 'Pa Urip', jabatan: 'SECURITY', gajiPokok: 1_450_000 },
+    { nama: 'Pa Juki', jabatan: 'SECURITY', gajiPokok: 1_450_000 },
+    { nama: 'Kebersihan', jabatan: 'KEBERSIHAN', gajiPokok: 1_080_000 },
+  ]
+  const karyawanRecords: Record<string, string> = {}
+  for (const k of daftarKaryawan) {
+    const karyawan = await db.karyawan.create({ data: k })
+    karyawanRecords[k.nama] = karyawan.id
+  }
+  console.log(`  ${daftarKaryawan.length} karyawan dibuat`)
+
+  // Satu contoh kasbon supaya fitur potongan gajian ada isinya saat dicoba.
+  await db.kasbon.create({
+    data: {
+      karyawanId: karyawanRecords['Pa Juki'],
+      tanggal: d('2026-08-05'),
+      nominal: 300_000,
+      keterangan: 'Keperluan mendesak keluarga',
+      sisaBelumLunas: 300_000,
+      status: 'BELUM_LUNAS',
+      dicatatOlehId: bendahara.id,
+    },
+  })
+
   await db.auditLog.create({
     data: {
       actorId: bendahara.id,
@@ -353,6 +385,7 @@ async function main() {
   console.log('    B2  Bp. Ary          - Rp185.000 kombinasi bulan berjalan + rapel')
   console.log('    C7-C10               - menunggak beberapa bulan')
   console.log('    A9, B7, C3           - punya laporan menunggu verifikasi')
+  console.log('    Pa Juki              - punya kasbon Rp300.000 belum lunas')
 }
 
 main()

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { wajibLogin, isPengurus } from '@/lib/auth'
 import { namaCluster } from '@/lib/setting'
+import { daftarTagihanAktif, statusUnitUntukTagihan } from '@/lib/tambahan'
 import { Navigasi } from '@/components/navigasi'
 import { Peringatan } from '@/components/ui'
 
@@ -12,6 +13,15 @@ export default async function LayoutWarga({ children }: { children: React.ReactN
 
   const cluster = await namaCluster()
 
+  // Lencana kecil di menu supaya warga tahu ada THR/tagihan tambahan yang
+  // belum lunas tanpa harus buka menunya dulu.
+  let tagihanBelumLunas = 0
+  if (sesi.unitId) {
+    const aktif = await daftarTagihanAktif()
+    const status = await Promise.all(aktif.map((t) => statusUnitUntukTagihan(t.id, sesi.unitId!)))
+    tagihanBelumLunas = status.filter((s) => s && s.kurang > 0).length
+  }
+
   return (
     <div className="min-h-dvh">
       <Navigasi
@@ -21,6 +31,7 @@ export default async function LayoutWarga({ children }: { children: React.ReactN
         menu={[
           { href: '/warga', label: 'Status Iuran' },
           { href: '/warga/lapor', label: 'Lapor Bayar' },
+          { href: '/warga/tambahan', label: 'Tagihan Tambahan', lencana: tagihanBelumLunas || undefined },
           { href: '/warga/riwayat', label: 'Riwayat' },
           { href: '/warga/akun', label: 'Akun' },
         ]}

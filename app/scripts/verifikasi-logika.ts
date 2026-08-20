@@ -10,6 +10,7 @@ import { kartuIuranUnit, kartuIuranSemuaUnit } from '../src/lib/iuran'
 import { ringkasanKas, arusKasBulanan } from '../src/lib/kas'
 import { rentangPeriode, tambahBulan, periodeSekarang } from '../src/lib/periode'
 import { rupiah } from '../src/lib/format'
+import { statusTagihanTambahan, statusUnitUntukTagihan } from '../src/lib/tambahan'
 
 let gagal = 0
 function cek(label: string, aktual: unknown, harapan: unknown) {
@@ -227,6 +228,114 @@ async function main() {
   // Bandingkan satu unit dari kalkulasi massal vs kalkulasi tunggal.
   const satu = await kartuIuranUnit(semua[5].unitId, periodeSekarang())
   cek('hasil massal == hasil tunggal', satu!.totalTunggakan, semua[5].totalTunggakan)
+
+  console.log('\n=== 9. Tagihan tambahan (THR, dsb.) — jalur terpisah dari iuran bulanan ===')
+  const c9 = await db.unit.findUnique({ where: { kode: 'C9' } })
+  const tagihanUji = await db.tagihanTambahan.create({
+    data: { nama: 'UJI THR', periode: '2027-03', nominalPerUnit: 175_000 },
+  })
+
+  const sebelumBayar = await statusUnitUntukTagihan(tagihanUji.id, c9!.id)
+  cek('sebelum bayar: status BELUM', sebelumBayar?.status, 'BELUM')
+  cek('sebelum bayar: kurang penuh 175rb', sebelumBayar?.kurang, 175_000)
+
+  // Laporan PENDING tidak boleh mengubah status, sama seperti iuran bulanan.
+  const trxTagihan = await db.transaction.create({
+    data: {
+      jenis: 'MASUK', tanggal: new Date('2027-03-10'), nominal: 175_000,
+      uraian: 'UJI bayar THR', metode: 'TRANSFER', unitId: c9!.id, status: 'PENDING',
+      alokasi: {
+        create: [{ periode: '2027-03', jenisIuran: 'TAMBAHAN', nominal: 175_000, tagihanTambahanId: tagihanUji.id }],
+      },
+    },
+  })
+  const saatPending = await statusUnitUntukTagihan(tagihanUji.id, c9!.id)
+  cek('laporan PENDING: status masih BELUM', saatPending?.status, 'BELUM')
+
+  const saldoSebelumTHR = (await ringkasanKas()).saldoAkhir
+  await db.transaction.update({ where: { id: trxTagihan.id }, data: { status: 'APPROVED', reviewedAt: new Date() } })
+
+  const setelahApprove = await statusUnitUntukTagihan(tagihanUji.id, c9!.id)
+  cek('setelah disetujui: status LUNAS', setelahApprove?.status, 'LUNAS')
+  const saldoSetelahTHR = (await ringkasanKas()).saldoAkhir
+  cek('saldo kas naik tepat sebesar THR (reuse ledger utama)', saldoSetelahTHR - saldoSebelumTHR, 175_000)
+
+  // Unit lain yang belum bayar harus tetap BELUM — tagihan ini per-unit, bukan global.
+  const c8 = await db.unit.findUnique({ where: { kode: 'C8' } })
+  const unitLain = await statusUnitUntukTagihan(tagihanUji.id, c8!.id)
+  cek('unit lain yang belum bayar: tetap BELUM', unitLain?.status, 'BELUM')
+
+  const semuaStatusTHR = await statusTagihanTambahan(tagihanUji.id)
+  cek('status massal: 1 unit LUNAS', semuaStatusTHR.filter((s) => s.status === 'LUNAS').length, 1)
+  cek('status massal: cakupan = seluruh unit aktif', semuaStatusTHR.length, unitAktif)
+
+  // Bersihkan data uji.
+  await db.allocation.deleteMany({ where: { transactionId: trxTagihan.id } })
+  await db.transaction.delete({ where: { id: trxTagihan.id } })
+  await db.tagihanTambahan.delete({ where: { id: tagihanUji.id } })
+
+  console.log('\n=== 10. Kasbon & gajian — potongan FIFO dan saldo kas ===')
+  const jukiSebelum = await db.karyawan.findFirst({ where: { nama: 'Pa Juki' } })
+  cek('Pa Juki ada di data seed', Boolean(jukiSebelum), true)
+
+  const kasbonJuki = await db.kasbon.findMany({ where: { karyawanId: jukiSebelum!.id, status: 'BELUM_LUNAS' } })
+  const totalKasbonAwal = kasbonJuki.reduce((s, k) => s + k.sisaBelumLunas, 0)
+  cek('kasbon awal Pa Juki dari seed 300rb', totalKasbonAwal, 300_000)
+
+  const saldoSebelumGaji = (await ringkasanKas()).saldoAkhir
+
+  // Proses gajian UJI: gaji 1.450.000, potongan kasbon 300.000 (sesuai saran = min(gaji, kasbon)).
+  const potonganUji = Math.min(jukiSebelum!.gajiPokok, totalKasbonAwal)
+  const gajianUji = await db.$transaction(async (tx) => {
+    const totalDibayar = jukiSebelum!.gajiPokok - potonganUji
+    const trx = await tx.transaction.create({
+      data: {
+        jenis: 'KELUAR', tanggal: new Date('2027-03-28'), nominal: totalDibayar,
+        uraian: 'UJI gaji Pa Juki', kategori: 'Honor Security', metode: 'TRANSFER', status: 'APPROVED',
+      },
+    })
+    const gajian = await tx.gajian.create({
+      data: {
+        karyawanId: jukiSebelum!.id, periode: '2027-03', gajiPokok: jukiSebelum!.gajiPokok,
+        totalPotongan: potonganUji, totalDibayar, tanggal: new Date('2027-03-28'), transactionId: trx.id,
+      },
+    })
+    let sisa = potonganUji
+    for (const k of kasbonJuki) {
+      if (sisa <= 0) break
+      const potong = Math.min(k.sisaBelumLunas, sisa)
+      await tx.potonganKasbon.create({ data: { kasbonId: k.id, gajianId: gajian.id, nominal: potong } })
+      const sisaBaru = k.sisaBelumLunas - potong
+      await tx.kasbon.update({ where: { id: k.id }, data: { sisaBelumLunas: sisaBaru, status: sisaBaru === 0 ? 'LUNAS' : 'BELUM_LUNAS' } })
+      sisa -= potong
+    }
+    return gajian
+  })
+
+  cek('totalDibayar = gajiPokok - potongan', gajianUji.totalDibayar, jukiSebelum!.gajiPokok - potonganUji)
+
+  const kasbonSetelah = await db.kasbon.findMany({ where: { karyawanId: jukiSebelum!.id } })
+  const totalSisaSetelah = kasbonSetelah.reduce((s, k) => s + (k.status === 'BELUM_LUNAS' ? k.sisaBelumLunas : 0), 0)
+  cek('kasbon terpotong penuh (300rb <= gaji)', totalSisaSetelah, 0)
+  cek('kasbon berubah status LUNAS', kasbonSetelah.every((k) => k.status === 'LUNAS'), true)
+
+  const saldoSetelahGaji = (await ringkasanKas()).saldoAkhir
+  cek(
+    'saldo kas berkurang tepat sebesar yang benar-benar dibayar (bukan gaji pokok penuh)',
+    saldoSebelumGaji - saldoSetelahGaji,
+    gajianUji.totalDibayar,
+  )
+
+  // Gaji pokok penuh TIDAK boleh mengurangi saldo — hanya totalDibayar (setelah potongan) yang riil keluar dari kas.
+  cek('potongan kasbon tidak mengurangi saldo dua kali', saldoSebelumGaji - saldoSetelahGaji < jukiSebelum!.gajiPokok, true)
+
+  // Bersihkan data uji, kembalikan kasbon Pa Juki ke keadaan seed semula.
+  await db.potonganKasbon.deleteMany({ where: { gajianId: gajianUji.id } })
+  await db.gajian.delete({ where: { id: gajianUji.id } })
+  await db.transaction.delete({ where: { id: gajianUji.transactionId! } })
+  for (const k of kasbonJuki) {
+    await db.kasbon.update({ where: { id: k.id }, data: { sisaBelumLunas: k.sisaBelumLunas, status: 'BELUM_LUNAS' } })
+  }
 
   console.log(`\n${gagal === 0 ? 'SEMUA LOGIKA LULUS' : `${gagal} PEMERIKSAAN GAGAL`}`)
   await db.$disconnect()

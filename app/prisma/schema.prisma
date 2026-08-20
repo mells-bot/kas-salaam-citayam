@@ -54,7 +54,6 @@ model Unit {
   @@index([urutan])
 }
 
-
 model User {
   id       String  @id @default(cuid())
   /// Login pakai kode unit (warga) atau username (pengurus)
@@ -68,10 +67,13 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  unit               Unit?         @relation(fields: [unitId], references: [id])
-  transaksiDiajukan  Transaction[] @relation("SubmittedBy")
-  transaksiDiperiksa Transaction[] @relation("ReviewedBy")
-  auditLogs          AuditLog[]
+  unit                  Unit?             @relation(fields: [unitId], references: [id])
+  transaksiDiajukan     Transaction[]     @relation("SubmittedBy")
+  transaksiDiperiksa    Transaction[]     @relation("ReviewedBy")
+  auditLogs             AuditLog[]
+  tagihanTambahanDibuat TagihanTambahan[]
+  kasbonDicatat         Kasbon[]
+  gajianDiproses        Gajian[]
 
   @@index([unitId])
 }
@@ -86,19 +88,19 @@ model Transaction {
   id String @id @default(cuid())
 
   /// "MASUK" | "KELUAR"
-  jenis     String
-  tanggal   DateTime
+  jenis    String
+  tanggal  DateTime
   /// Nominal total transaksi, rupiah penuh, selalu positif.
-  nominal   Int
-  uraian    String
+  nominal  Int
+  uraian   String
   /// "TRANSFER" | "TUNAI"
-  metode    String  @default("TRANSFER")
+  metode   String   @default("TRANSFER")
   /// Kategori pengeluaran (F-05). Null untuk transaksi masuk.
-  kategori  String?
+  kategori String?
   /// Unit pembayar. Null untuk pengeluaran atau pemasukan non-iuran.
-  unitId    String?
+  unitId   String?
   /// Catatan bebas, ekuivalen kolom "Remark" di Google Sheets.
-  remark    String?
+  remark   String?
 
   /// "PENDING" | "APPROVED" | "REJECTED" | "VOID"
   status String @default("PENDING")
@@ -113,17 +115,18 @@ model Transaction {
   alasanTolak   String?
 
   /// Soft delete saja — data kas tidak boleh hilang permanen (NF-04).
-  dibatalkanPada    DateTime?
-  alasanPembatalan  String?
+  dibatalkanPada   DateTime?
+  alasanPembatalan String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  unit        Unit?  @relation(fields: [unitId], references: [id])
-  submittedBy User?  @relation("SubmittedBy", fields: [submittedById], references: [id])
-  reviewedBy  User?  @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  unit        Unit? @relation(fields: [unitId], references: [id])
+  submittedBy User? @relation("SubmittedBy", fields: [submittedById], references: [id])
+  reviewedBy  User? @relation("ReviewedBy", fields: [reviewedById], references: [id])
 
   alokasi Allocation[]
+  gajian  Gajian?
 
   @@index([status, tanggal])
   @@index([unitId, status])
@@ -138,17 +141,51 @@ model Allocation {
   transactionId String
 
   /// Periode yang dibayar, format "YYYY-MM"
-  periode String
-  /// "SAMPAH" | "SECURITY"
+  periode    String
+  /// "SAMPAH" | "SECURITY" | "TAMBAHAN" (lihat tagihanTambahanId di bawah)
   jenisIuran String
   /// Bagian nominal transaksi yang dialokasikan ke periode+jenis ini.
   /// Total seluruh alokasi tidak boleh melebihi Transaction.nominal.
-  nominal Int
+  nominal    Int
 
-  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  /// Diisi HANYA saat alokasi ini membayar sebuah tagihan tambahan (THR, dsb),
+  /// bukan iuran bulanan rutin. Sengaja jalur terpisah dari tarifSampah/
+  /// tarifSecurity di Unit — supaya perhitungan tunggakan bulanan yang sudah
+  /// berjalan di produksi (34 unit) tidak perlu disentuh sama sekali.
+  tagihanTambahanId String?
 
-  @@unique([transactionId, periode, jenisIuran])
+  transaction     Transaction      @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  tagihanTambahan TagihanTambahan? @relation(fields: [tagihanTambahanId], references: [id])
+
+  @@unique([transactionId, periode, jenisIuran, tagihanTambahanId])
   @@index([periode, jenisIuran])
+  @@index([tagihanTambahanId])
+}
+
+/// Tagihan sekali/berkala di luar iuran bulanan rutin — THR Ramadan, iuran
+/// 17 Agustus, dsb. Dibuat oleh bendahara per kejadian, bukan tarif tetap.
+model TagihanTambahan {
+  id             String   @id @default(cuid())
+  /// Nama tampilan, mis. "THR Ramadan 2027"
+  nama           String
+  /// Bulan tagihan ini berlaku, format "YYYY-MM". Dipakai untuk pengelompokan
+  /// laporan, bukan untuk menghitung tunggakan bulanan biasa.
+  periode        String
+  /// Nominal yang wajib dibayar SETIAP unit aktif untuk tagihan ini.
+  nominalPerUnit Int
+  keterangan     String?
+  /// Nonaktifkan setelah selesai ditagih supaya tidak terus muncul di form
+  /// warga, tanpa menghapus riwayat pembayaran yang sudah ada.
+  aktif          Boolean  @default(true)
+  dibuatOlehId   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  dibuatOleh User?        @relation(fields: [dibuatOlehId], references: [id])
+  alokasi    Allocation[]
+
+  @@index([periode])
+  @@index([aktif])
 }
 
 // ---------------------------------------------------------------------------
@@ -179,4 +216,104 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Karyawan, kasbon & penggajian
+// ---------------------------------------------------------------------------
+
+/// Petugas security & kebersihan yang digaji rutin oleh cluster.
+model Karyawan {
+  id        String  @id @default(cuid())
+  nama      String
+  /// "SECURITY" | "KEBERSIHAN"
+  jabatan   String
+  /// Gaji pokok bulanan saat ini. Perubahan tarif tidak mengubah riwayat
+  /// Gajian yang sudah tercatat, karena Gajian menyimpan snapshot-nya sendiri.
+  gajiPokok Int
+  aktif     Boolean @default(true)
+  catatan   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  kasbon Kasbon[]
+  gajian Gajian[]
+
+  @@index([aktif])
+}
+
+/// Uang muka/pinjaman karyawan terhadap gaji. Dipotong bertahap saat gajian,
+/// bisa oleh lebih dari satu kali gajian bila nominalnya besar (lihat
+/// PotonganKasbon untuk rincian potongan per gajian).
+model Kasbon {
+  id             String   @id @default(cuid())
+  karyawanId     String
+  tanggal        DateTime
+  nominal        Int
+  keterangan     String?
+  /// Sisa yang belum terpotong dari gajian. Berkurang tiap kali dipakai
+  /// memotong gajian, sampai 0 (lunas).
+  sisaBelumLunas Int
+  /// "BELUM_LUNAS" | "LUNAS"
+  status         String   @default("BELUM_LUNAS")
+
+  dicatatOlehId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  karyawan    Karyawan         @relation(fields: [karyawanId], references: [id])
+  dicatatOleh User?            @relation(fields: [dicatatOlehId], references: [id])
+  potongan    PotonganKasbon[]
+
+  @@index([karyawanId, status])
+}
+
+/// Rincian: gajian bulan tertentu memotong kasbon mana sebesar berapa.
+/// Diperlukan karena satu gajian bisa memotong beberapa kasbon berbeda, dan
+/// satu kasbon besar bisa terpotong bertahap lewat beberapa kali gajian.
+model PotonganKasbon {
+  id       String @id @default(cuid())
+  kasbonId String
+  gajianId String
+  nominal  Int
+
+  createdAt DateTime @default(now())
+
+  kasbon Kasbon @relation(fields: [kasbonId], references: [id])
+  gajian Gajian @relation(fields: [gajianId], references: [id])
+
+  @@index([kasbonId])
+  @@index([gajianId])
+}
+
+/// Satu kali proses gajian untuk satu karyawan pada satu bulan. Nominal yang
+/// benar-benar dibayar dicatat sebagai satu Transaction KELUAR di buku kas,
+/// supaya saldo kas, laporan bulanan, dan ekspor CSV otomatis ikut menghitung
+/// tanpa kode terpisah.
+model Gajian {
+  id            String   @id @default(cuid())
+  karyawanId    String
+  /// Bulan gajian, format "YYYY-MM"
+  periode       String
+  /// Snapshot gaji pokok saat itu — tidak berubah walau tarif karyawan
+  /// diubah belakangan.
+  gajiPokok     Int
+  totalPotongan Int      @default(0)
+  /// gajiPokok - totalPotongan. Potongan diisi manual oleh bendahara per
+  /// gajian (bukan otomatis penuh), jadi nilai ini bukan hasil rumus kaku.
+  totalDibayar  Int
+  tanggal       DateTime
+
+  transactionId String?  @unique
+  dicatatOlehId String?
+  createdAt     DateTime @default(now())
+
+  karyawan       Karyawan         @relation(fields: [karyawanId], references: [id])
+  transaction    Transaction?     @relation(fields: [transactionId], references: [id])
+  dicatatOleh    User?            @relation(fields: [dicatatOlehId], references: [id])
+  potonganKasbon PotonganKasbon[]
+
+  @@unique([karyawanId, periode])
+  @@index([periode])
 }
