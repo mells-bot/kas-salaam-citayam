@@ -388,6 +388,50 @@ async function main() {
     await db.kasbon.update({ where: { id: k.id }, data: { sisaBelumLunas: k.sisaBelumLunas, status: 'BELUM_LUNAS' } })
   }
 
+  console.log('\n=== 11. Penyesuaian saldo berjalan (masa peralihan) ===')
+  const saldoSebelumSesuai = (await ringkasanKas()).saldoAkhir
+
+  // Saldo riil LEBIH BESAR dari yang terhitung -> harus tercatat sebagai MASUK.
+  const targetNaik = saldoSebelumSesuai + 500_000
+  const selisihNaik = targetNaik - saldoSebelumSesuai
+  const trxNaik = await db.transaction.create({
+    data: {
+      jenis: selisihNaik > 0 ? 'MASUK' : 'KELUAR',
+      tanggal: new Date(), nominal: Math.abs(selisihNaik),
+      uraian: 'UJI penyesuaian saldo (naik)', metode: 'TRANSFER', status: 'APPROVED',
+      kategori: selisihNaik > 0 ? null : 'Penyesuaian Saldo',
+    },
+  })
+  const saldoSetelahNaik = (await ringkasanKas()).saldoAkhir
+  cek('penyesuaian naik: saldo bertambah tepat sebesar selisih', saldoSetelahNaik - saldoSebelumSesuai, 500_000)
+  await db.transaction.delete({ where: { id: trxNaik.id } })
+
+  // Saldo riil LEBIH KECIL -> harus tercatat sebagai KELUAR berkategori "Penyesuaian Saldo".
+  const saldoSebelumTurun = (await ringkasanKas()).saldoAkhir
+  const targetTurun = saldoSebelumTurun - 300_000
+  const selisihTurun = targetTurun - saldoSebelumTurun
+  const trxTurun = await db.transaction.create({
+    data: {
+      jenis: selisihTurun > 0 ? 'MASUK' : 'KELUAR',
+      tanggal: new Date(), nominal: Math.abs(selisihTurun),
+      uraian: 'UJI penyesuaian saldo (turun)', metode: 'TRANSFER', status: 'APPROVED',
+      kategori: selisihTurun > 0 ? null : 'Penyesuaian Saldo',
+    },
+  })
+  const saldoSetelahTurun = (await ringkasanKas()).saldoAkhir
+  cek('penyesuaian turun: saldo berkurang tepat sebesar selisih', saldoSebelumTurun - saldoSetelahTurun, 300_000)
+  cek('penyesuaian turun: berkategori "Penyesuaian Saldo"', trxTurun.kategori, 'Penyesuaian Saldo')
+
+  // Bulan-bulan lain tidak boleh ikut berubah — penyesuaian hanya menambah
+  // satu baris baru bertanggal hari ini, beda dari mengubah saldo awal yang
+  // menggeser semua bulan ke belakang.
+  const arusSebelumBulanLalu = await arusKasBulanan(3)
+  const bulanLaluSebelum = arusSebelumBulanLalu.find((a) => a.periode < periodeSekarang())?.saldoAkhir
+  await db.transaction.delete({ where: { id: trxTurun.id } })
+  const arusSetelahDihapus = await arusKasBulanan(3)
+  const bulanLaluSetelah = arusSetelahDihapus.find((a) => a.periode < periodeSekarang())?.saldoAkhir
+  cek('saldo bulan lalu tidak terpengaruh transaksi penyesuaian bulan ini', bulanLaluSebelum, bulanLaluSetelah)
+
   console.log(`\n${gagal === 0 ? 'SEMUA LOGIKA LULUS' : `${gagal} PEMERIKSAAN GAGAL`}`)
   await db.$disconnect()
   process.exit(gagal === 0 ? 0 : 1)

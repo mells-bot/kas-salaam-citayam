@@ -5,9 +5,10 @@ import { db } from '@/lib/db'
 import { hashPin, wajibBendahara, wajibPengurus } from '@/lib/auth'
 import { catatAudit } from '@/lib/audit'
 import { JENIS_TRANSAKSI, SETTING_SALDO_AWAL, STATUS } from '@/lib/constants'
-import { labelPeriode, rupiah } from '@/lib/format'
+import { labelPeriode, rupiah, tanggalSingkat } from '@/lib/format'
 import { kategoriPengeluaranSchema, laporanBayarSchema, pemasukanLainSchema, pengeluaranSchema, unitSchema } from '@/lib/validasi'
 import { simpanSetting } from '@/lib/setting'
+import { ringkasanKas } from '@/lib/kas'
 
 export interface HasilAksi {
   ok?: boolean
@@ -539,4 +540,88 @@ export async function aksiNonaktifkanKategori(_prev: HasilAksi | null, formData:
 
   segarkan()
   return { ok: true, pesan: `Kategori "${kategori.nama}" dinonaktifkan.` }
+}
+
+// ---------------------------------------------------------------------------
+// Penyesuaian saldo berjalan
+// ---------------------------------------------------------------------------
+
+/// Nama kategori khusus untuk transaksi penyesuaian, dibuat otomatis kalau
+/// belum ada (mirip pola unit ZZ-UJI di skrip verifikasi — dibuat sekali,
+/// dipakai berulang, tidak pernah dihapus supaya riwayatnya tetap runut).
+const KATEGORI_PENYESUAIAN = 'Penyesuaian Saldo'
+
+/**
+ * Menyesuaikan saldo BERJALAN (bukan saldo awal) ke angka riil kas/bank saat
+ * ini. Dipakai saat masa peralihan ke sistem ini, ketika saldo yang terhitung
+ * dari data yang sudah diinput belum tepat sama dengan saldo sungguhan.
+ *
+ * Berbeda dari mengubah saldo awal (yang menggeser SELURUH riwayat saldo ke
+ * belakang), ini membuat SATU transaksi baru bertanggal hari ini sebesar
+ * selisihnya — riwayat bulan-bulan sebelumnya tidak ikut berubah, dan
+ * selisihnya tetap tercatat jelas di buku kas beserta alasannya (bukan angka
+ * yang tiba-tiba berubah tanpa jejak).
+ */
+export async function aksiSesuaikanSaldo(_prev: HasilAksi | null, formData: FormData): Promise<HasilAksi> {
+  const sesi = await wajibBendahara()
+
+  const saldoRiil = Number(formData.get('saldoRiil'))
+  const tanggalStr = String(formData.get('tanggal') ?? '')
+  const keterangan = String(formData.get('keterangan') ?? '').trim()
+
+  if (!Number.isFinite(saldoRiil) || !Number.isInteger(saldoRiil)) {
+    return { galat: 'Saldo riil harus bilangan bulat rupiah.' }
+  }
+  const tanggal = new Date(tanggalStr)
+  if (Number.isNaN(tanggal.getTime())) return { galat: 'Tanggal tidak valid.' }
+
+  const kas = await ringkasanKas()
+  const selisih = saldoRiil - kas.saldoAkhir
+
+  if (selisih === 0) {
+    return { ok: true, pesan: 'Saldo yang Anda masukkan sudah sama dengan saldo terhitung. Tidak ada penyesuaian dibuat.' }
+  }
+
+  // Pastikan kategori penyesuaian ada (dibuat sekali, dipakai seterusnya).
+  await db.kategoriPengeluaran.upsert({
+    where: { nama: KATEGORI_PENYESUAIAN },
+    create: { nama: KATEGORI_PENYESUAIAN, urutan: 999 },
+    update: {},
+  })
+
+  const naik = selisih > 0
+  const nominal = Math.abs(selisih)
+  const uraian = `Penyesuaian saldo kas (${naik ? 'kurang tercatat' : 'lebih tercatat'} ${rupiah(nominal)})`
+
+  const trx = await db.transaction.create({
+    data: {
+      jenis: naik ? JENIS_TRANSAKSI.MASUK : JENIS_TRANSAKSI.KELUAR,
+      tanggal,
+      nominal,
+      uraian,
+      kategori: naik ? null : KATEGORI_PENYESUAIAN,
+      metode: 'TRANSFER',
+      status: STATUS.APPROVED,
+      remark: keterangan || 'Penyesuaian saldo saat peralihan ke sistem ini.',
+      submittedById: sesi.userId,
+      reviewedById: sesi.userId,
+      reviewedAt: new Date(),
+    },
+    select: { id: true },
+  })
+
+  await catatAudit({
+    aktor: sesi,
+    aksi: 'SESUAIKAN_SALDO',
+    entitas: 'Transaction',
+    entitasId: trx.id,
+    ringkasan: `Menyesuaikan saldo dari ${rupiah(kas.saldoAkhir)} menjadi ${rupiah(saldoRiil)} (selisih ${naik ? '+' : '-'}${rupiah(nominal)}) pada ${tanggalSingkat(tanggal)}`,
+    detail: { saldoSebelum: kas.saldoAkhir, saldoRiil, selisih, keterangan },
+  })
+
+  segarkan()
+  return {
+    ok: true,
+    pesan: `Saldo disesuaikan menjadi ${rupiah(saldoRiil)}. Tercatat sebagai ${naik ? 'pemasukan' : 'pengeluaran'} ${rupiah(nominal)} di buku kas.`,
+  }
 }

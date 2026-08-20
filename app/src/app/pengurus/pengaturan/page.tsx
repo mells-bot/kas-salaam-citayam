@@ -8,6 +8,7 @@ import { rupiah } from '@/lib/format'
 import { Kartu, JudulSeksi, Peringatan } from '@/components/ui'
 import FormPengaturan from './form-pengaturan'
 import PanelKategori from './panel-kategori'
+import FormSesuaikanSaldo from './form-sesuaikan-saldo'
 
 export const metadata = { title: 'Pengaturan · Kas Cluster' }
 
@@ -69,6 +70,10 @@ export default async function HalamanPengaturan() {
             {rupiah(kas.saldoAkhir)}
           </dd>
         </dl>
+
+        <div className="mt-3">
+          <FormSesuaikanSaldo saldoTerhitung={kas.saldoAkhir} />
+        </div>
       </Kartu>
 
       <Kartu>
