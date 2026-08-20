@@ -20,7 +20,8 @@ export async function aksiBuatTagihanTambahan(_prev: HasilAksi | null, formData:
   const parsed = tagihanTambahanSchema.safeParse({
     nama: formData.get('nama'),
     periode: formData.get('periode'),
-    nominalPerUnit: formData.get('nominalPerUnit'),
+    cakupan: formData.get('cakupan'),
+    nominalPerUnit: formData.get('nominalPerUnit') || undefined,
     keterangan: formData.get('keterangan') ?? '',
   })
   if (!parsed.success) return { galat: parsed.error.issues[0].message }
@@ -30,18 +31,26 @@ export async function aksiBuatTagihanTambahan(_prev: HasilAksi | null, formData:
     data: {
       nama: d.nama,
       periode: d.periode,
-      nominalPerUnit: d.nominalPerUnit,
+      cakupan: d.cakupan,
+      // SECURITY/PENUH dihitung otomatis per unit dari tarif unit — nominal
+      // tetap (nominalPerUnit) hanya bermakna untuk cakupan FLAT.
+      nominalPerUnit: d.cakupan === 'FLAT' ? d.nominalPerUnit! : null,
       keterangan: d.keterangan || null,
       dibuatOlehId: sesi.userId,
     },
   })
+
+  const labelCakupan =
+    d.cakupan === 'SECURITY' ? 'sebesar tarif security masing-masing unit' :
+    d.cakupan === 'PENUH' ? 'sebesar tarif penuh (sampah+security) masing-masing unit' :
+    `sebesar ${rupiah(d.nominalPerUnit!)}/unit (sama rata)`
 
   await catatAudit({
     aktor: sesi,
     aksi: 'BUAT_TAGIHAN_TAMBAHAN',
     entitas: 'TagihanTambahan',
     entitasId: tagihan.id,
-    ringkasan: `Membuat tagihan tambahan "${d.nama}" (${labelPeriode(d.periode)}) sebesar ${rupiah(d.nominalPerUnit)}/unit`,
+    ringkasan: `Membuat tagihan tambahan "${d.nama}" (${labelPeriode(d.periode)}) ${labelCakupan}`,
     detail: d,
   })
 

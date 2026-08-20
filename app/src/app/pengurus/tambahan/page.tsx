@@ -61,7 +61,17 @@ async function TagihanCard({
   tagihan,
   bendahara,
 }: {
-  tagihan: { id: string; nama: string; periode: string; nominalPerUnit: number; keterangan: string | null; aktif: boolean; createdAt: Date; dibuatOleh: { nama: string } | null }
+  tagihan: {
+    id: string
+    nama: string
+    periode: string
+    cakupan: string
+    nominalPerUnit: number | null
+    keterangan: string | null
+    aktif: boolean
+    createdAt: Date
+    dibuatOleh: { nama: string } | null
+  }
   bendahara: boolean
 }) {
   const status = await statusTagihanTambahan(tagihan.id)
@@ -70,6 +80,13 @@ async function TagihanCard({
   const belum = status.filter((s) => s.status === 'BELUM').length
   const totalTerkumpul = status.reduce((s, x) => s + x.dibayar, 0)
   const totalTarget = status.reduce((s, x) => s + x.wajib, 0)
+
+  const labelCakupan =
+    tagihan.cakupan === 'SECURITY'
+      ? 'sesuai tarif security tiap unit'
+      : tagihan.cakupan === 'PENUH'
+        ? 'sesuai tarif penuh tiap unit'
+        : `${rupiah(tagihan.nominalPerUnit ?? 0)}/unit (sama rata)`
 
   return (
     <Kartu>
@@ -82,7 +99,7 @@ async function TagihanCard({
             )}
           </p>
           <p className="mt-0.5 text-xs text-ink-muted">
-            {labelPeriode(tagihan.periode)} · {rupiah(tagihan.nominalPerUnit)}/unit · dibuat{' '}
+            {labelPeriode(tagihan.periode)} · {labelCakupan} · dibuat{' '}
             {waktu(tagihan.createdAt)}
             {tagihan.dibuatOleh && ` oleh ${tagihan.dibuatOleh.nama}`}
           </p>

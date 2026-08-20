@@ -1,10 +1,12 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { aksiBuatTagihanTambahan, type HasilAksi } from './actions'
 import { periodeSekarang } from '@/lib/periode'
 import { KELAS_INPUT, Label, Peringatan, Tombol } from '@/components/ui'
+
+type Cakupan = 'FLAT' | 'SECURITY' | 'PENUH'
 
 function Simpan() {
   const { pending } = useFormStatus()
@@ -15,8 +17,28 @@ function Simpan() {
   )
 }
 
+const OPSI_CAKUPAN: { nilai: Cakupan; label: string; keterangan: string }[] = [
+  {
+    nilai: 'PENUH',
+    label: 'Penuh (sampah + security)',
+    keterangan: 'Otomatis mengikuti tarif sampah+security tiap unit — sama seperti iuran bulan normal.',
+  },
+  {
+    nilai: 'SECURITY',
+    label: 'Security saja',
+    keterangan:
+      'Otomatis mengikuti tarif security tiap unit. Cocok kalau THR/tagihan ini hanya untuk komponen security.',
+  },
+  {
+    nilai: 'FLAT',
+    label: 'Nominal sama rata',
+    keterangan: 'Anda tentukan sendiri satu angka yang berlaku sama untuk semua unit aktif.',
+  },
+]
+
 export default function FormTagihanBaru() {
   const [hasil, aksi] = useActionState<HasilAksi | null, FormData>(aksiBuatTagihanTambahan, null)
+  const [cakupan, setCakupan] = useState<Cakupan>('PENUH')
 
   return (
     <form action={aksi} className="space-y-3">
@@ -48,20 +70,45 @@ export default function FormTagihanBaru() {
       </div>
 
       <div>
-        <Label wajib>Nominal per unit</Label>
-        <input
-          type="number"
-          name="nominalPerUnit"
-          required
-          min={1}
-          placeholder="175000"
-          className={`${KELAS_INPUT} tabular`}
-        />
-        <p className="mt-1 text-xs text-ink-muted">
-          Berlaku sama untuk semua unit aktif. Contoh: THR biasanya sama dengan iuran satu bulan
-          penuh (sampah + security).
-        </p>
+        <Label wajib>Berapa yang ditagih ke tiap unit?</Label>
+        <div className="space-y-2">
+          {OPSI_CAKUPAN.map((opsi) => (
+            <label
+              key={opsi.nilai}
+              className={`flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 transition-colors ${
+                cakupan === opsi.nilai ? 'border-[#2a78d6] bg-[#2a78d6]/4' : 'border-baseline bg-white'
+              }`}
+            >
+              <input
+                type="radio"
+                name="cakupan"
+                value={opsi.nilai}
+                checked={cakupan === opsi.nilai}
+                onChange={() => setCakupan(opsi.nilai)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[#2a78d6]"
+              />
+              <span>
+                <span className="block text-sm font-medium text-ink">{opsi.label}</span>
+                <span className="block text-xs text-ink-2">{opsi.keterangan}</span>
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
+
+      {cakupan === 'FLAT' && (
+        <div>
+          <Label wajib>Nominal per unit</Label>
+          <input
+            type="number"
+            name="nominalPerUnit"
+            required
+            min={1}
+            placeholder="175000"
+            className={`${KELAS_INPUT} tabular`}
+          />
+        </div>
+      )}
 
       <div>
         <Label>Keterangan (opsional)</Label>

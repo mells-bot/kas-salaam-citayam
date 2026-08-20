@@ -45,7 +45,7 @@ export default async function HalamanTambahanWarga() {
                       dari <span className="tabular font-medium text-ink">{rupiah(status.wajib)}</span>
                     </>
                   ) : (
-                    `Total tagihan: ${rupiah(tagihan.nominalPerUnit)}`
+                    'Status untuk unit Anda tidak tersedia saat ini.'
                   )}
                 </p>
               </div>

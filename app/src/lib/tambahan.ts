@@ -8,10 +8,33 @@ import { STATUS } from './constants'
  * Sengaja jalur terpisah dari lib/iuran.ts — memakai Transaction+Allocation
  * yang SAMA (jadi verifikasi, saldo kas, ledger, ekspor CSV semuanya otomatis
  * ikut, tanpa kode duplikat), tapi "wajib bayar"-nya dihitung dari
- * TagihanTambahan.nominalPerUnit, bukan dari Unit.tarifSampah/tarifSecurity.
- * Ini menghindari perubahan pada mesin hitung tunggakan bulanan yang sudah
- * berjalan di produksi.
+ * TagihanTambahan, bukan dari mesin tunggakan bulanan. Ini menghindari
+ * perubahan pada mesin hitung tunggakan bulanan yang sudah berjalan di
+ * produksi.
+ *
+ * Tiga cakupan (lihat komentar cakupan di schema.prisma):
+ *   FLAT     -> nominal sama rata untuk semua unit (TagihanTambahan.nominalPerUnit)
+ *   SECURITY -> mengikuti Unit.tarifSecurity masing-masing unit
+ *   PENUH    -> mengikuti Unit.tarifSampah + Unit.tarifSecurity masing-masing unit
+ * SECURITY/PENUH otomatis menghormati unit yang tidak ditagih sampah (mis.
+ * tarifSampah=0) — tidak perlu pengaturan manual per unit untuk kasus itu.
  */
+
+interface UnitTarif {
+  tarifSampah: number
+  tarifSecurity: number
+}
+
+interface TagihanCakupan {
+  cakupan: string
+  nominalPerUnit: number | null
+}
+
+export function hitungWajib(tagihan: TagihanCakupan, unit: UnitTarif): number {
+  if (tagihan.cakupan === 'SECURITY') return unit.tarifSecurity
+  if (tagihan.cakupan === 'PENUH') return unit.tarifSampah + unit.tarifSecurity
+  return tagihan.nominalPerUnit ?? 0
+}
 
 export interface StatusUnitTambahan {
   unitId: string
@@ -30,7 +53,7 @@ export async function statusTagihanTambahan(tagihanTambahanId: string): Promise<
     db.unit.findMany({
       where: { aktif: true },
       orderBy: [{ urutan: 'asc' }, { kode: 'asc' }],
-      select: { id: true, kode: true, namaWarga: true },
+      select: { id: true, kode: true, namaWarga: true, tarifSampah: true, tarifSecurity: true },
     }),
     db.allocation.findMany({
       where: {
@@ -50,10 +73,11 @@ export async function statusTagihanTambahan(tagihanTambahanId: string): Promise<
   }
 
   return units.map((u) => {
+    const wajib = hitungWajib(tagihan, u)
     const dibayar = dibayarPerUnit.get(u.id) ?? 0
-    const kurang = Math.max(0, tagihan.nominalPerUnit - dibayar)
+    const kurang = Math.max(0, wajib - dibayar)
     const status: StatusUnitTambahan['status'] = kurang === 0 ? 'LUNAS' : dibayar > 0 ? 'SEBAGIAN' : 'BELUM'
-    return { unitId: u.id, kode: u.kode, namaWarga: u.namaWarga, wajib: tagihan.nominalPerUnit, dibayar, kurang, status }
+    return { unitId: u.id, kode: u.kode, namaWarga: u.namaWarga, wajib, dibayar, kurang, status }
   })
 }
 

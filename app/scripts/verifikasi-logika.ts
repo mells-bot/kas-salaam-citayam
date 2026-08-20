@@ -274,6 +274,57 @@ async function main() {
   await db.transaction.delete({ where: { id: trxTagihan.id } })
   await db.tagihanTambahan.delete({ where: { id: tagihanUji.id } })
 
+  console.log('\n=== 9b. Cakupan tagihan tambahan: FLAT / SECURITY / PENUH ===')
+  // Unit sementara bertarif sampah 0 (independen dari A12 -- statusnya
+  // "tarifSampah=0" bisa berbeda antara lokal dan produksi tergantung
+  // konfirmasi bendahara, jadi tes ini tidak boleh berasumsi soal A12).
+  const unitTarifNol = await db.unit.create({
+    data: {
+      kode: 'ZZ-CAKUPAN', blok: 'ZZ', nomor: 'UJI', urutan: 998,
+      namaWarga: 'Unit uji cakupan', mulaiPeriode: '2026-01',
+      tarifSampah: 0, tarifSecurity: 140_000,
+    },
+  })
+  const unitNormal = await db.unit.findUnique({ where: { kode: 'A7' } }) // tarif standar 35rb+140rb
+
+  const tagihanSecurity = await db.tagihanTambahan.create({
+    data: { nama: 'UJI cakupan SECURITY', periode: '2027-04', cakupan: 'SECURITY' },
+  })
+  const statusNolSecurity = await statusUnitUntukTagihan(tagihanSecurity.id, unitTarifNol.id)
+  const statusA7Security = await statusUnitUntukTagihan(tagihanSecurity.id, unitNormal!.id)
+  cek('SECURITY: wajib unit tarifSampah=0 = tarifSecurity-nya', statusNolSecurity?.wajib, 140_000)
+  cek('SECURITY: wajib A7 = tarifSecurity A7 (bukan tarif unit lain)', statusA7Security?.wajib, unitNormal!.tarifSecurity)
+  await db.tagihanTambahan.delete({ where: { id: tagihanSecurity.id } })
+
+  const tagihanPenuh = await db.tagihanTambahan.create({
+    data: { nama: 'UJI cakupan PENUH', periode: '2027-04', cakupan: 'PENUH' },
+  })
+  const statusNolPenuh = await statusUnitUntukTagihan(tagihanPenuh.id, unitTarifNol.id)
+  const statusA7Penuh = await statusUnitUntukTagihan(tagihanPenuh.id, unitNormal!.id)
+  cek('PENUH: wajib unit tarifSampah=0 = tarifSampah(0)+tarifSecurity', statusNolPenuh?.wajib, 140_000)
+  cek(
+    'PENUH: unit tarifSampah=0 -> PENUH sama dengan SECURITY-saja (otomatis ikut tarif unit)',
+    statusNolPenuh?.wajib,
+    statusNolSecurity?.wajib,
+  )
+  cek(
+    'PENUH: wajib A7 = tarifSampah+tarifSecurity A7 (unit normal, lebih besar dari SECURITY-saja)',
+    statusA7Penuh?.wajib,
+    unitNormal!.tarifSampah + unitNormal!.tarifSecurity,
+  )
+  cek('PENUH: A7 (unit normal) LEBIH BESAR dari SECURITY-saja', statusA7Penuh!.wajib > statusA7Security!.wajib, true)
+  await db.tagihanTambahan.delete({ where: { id: tagihanPenuh.id } })
+
+  const tagihanFlat = await db.tagihanTambahan.create({
+    data: { nama: 'UJI cakupan FLAT', periode: '2027-04', cakupan: 'FLAT', nominalPerUnit: 50_000 },
+  })
+  const statusNolFlat = await statusUnitUntukTagihan(tagihanFlat.id, unitTarifNol.id)
+  const statusA7Flat = await statusUnitUntukTagihan(tagihanFlat.id, unitNormal!.id)
+  cek('FLAT: wajib sama untuk semua unit terlepas dari tarif unit', statusNolFlat?.wajib, 50_000)
+  cek('FLAT: wajib sama untuk semua unit terlepas dari tarif unit (unit lain)', statusA7Flat?.wajib, 50_000)
+  await db.tagihanTambahan.delete({ where: { id: tagihanFlat.id } })
+  await db.unit.delete({ where: { id: unitTarifNol.id } })
+
   console.log('\n=== 10. Kasbon & gajian — potongan FIFO dan saldo kas ===')
   const jukiSebelum = await db.karyawan.findFirst({ where: { nama: 'Pa Juki' } })
   cek('Pa Juki ada di data seed', Boolean(jukiSebelum), true)

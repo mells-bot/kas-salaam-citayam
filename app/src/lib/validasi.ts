@@ -121,12 +121,27 @@ export const gantiPinSchema = z
 // Tagihan tambahan (THR, dsb.)
 // ---------------------------------------------------------------------------
 
-export const tagihanTambahanSchema = z.object({
-  nama: z.string().trim().min(3, 'Nama tagihan minimal 3 karakter').max(150),
-  periode: z.string().refine(isPeriodeValid, { message: 'Periode harus format YYYY-MM' }),
-  nominalPerUnit: nominalPositif,
-  keterangan: z.string().max(500).optional().or(z.literal('')),
-})
+export const tagihanTambahanSchema = z
+  .object({
+    nama: z.string().trim().min(3, 'Nama tagihan minimal 3 karakter').max(150),
+    periode: z.string().refine(isPeriodeValid, { message: 'Periode harus format YYYY-MM' }),
+    /// FLAT = nominal sama rata (isi nominalPerUnit). SECURITY/PENUH = ikut
+    /// tarif masing-masing unit, sehingga unit yang tidak ditagih sampah
+    /// otomatis kena versi security-saja juga tanpa pengaturan manual.
+    cakupan: z.enum(['FLAT', 'SECURITY', 'PENUH']),
+    // Wajib hanya untuk FLAT — divalidasi lewat superRefine di bawah.
+    nominalPerUnit: z.coerce.number().int().positive().max(1_000_000_000).optional(),
+    keterangan: z.string().max(500).optional().or(z.literal('')),
+  })
+  .superRefine((d, ctx) => {
+    if (d.cakupan === 'FLAT' && !d.nominalPerUnit) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['nominalPerUnit'],
+        message: 'Nominal per unit wajib diisi untuk cakupan "nominal sama rata"',
+      })
+    }
+  })
 
 export const laporanTambahanSchema = z.object({
   tagihanTambahanId: z.string().min(1, 'Tagihan tidak valid'),

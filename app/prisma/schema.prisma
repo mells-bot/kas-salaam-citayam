@@ -171,8 +171,16 @@ model TagihanTambahan {
   /// Bulan tagihan ini berlaku, format "YYYY-MM". Dipakai untuk pengelompokan
   /// laporan, bukan untuk menghitung tunggakan bulanan biasa.
   periode        String
-  /// Nominal yang wajib dibayar SETIAP unit aktif untuk tagihan ini.
-  nominalPerUnit Int
+  /// "FLAT" (nominal sama untuk semua unit, dari nominalPerUnit) |
+  /// "SECURITY" (= tarifSecurity milik unit masing-masing) |
+  /// "PENUH" (= tarifSampah + tarifSecurity milik unit masing-masing).
+  /// SECURITY/PENUH otomatis mengikuti tarif unit, sehingga unit yang
+  /// memang tidak ditagih sampah (mis. tarifSampah=0) otomatis kena versi
+  /// security-saja juga untuk tagihan ini, tanpa perlu diatur manual per unit.
+  cakupan        String   @default("FLAT")
+  /// Hanya dipakai saat cakupan="FLAT". Untuk SECURITY/PENUH, nominal per
+  /// unit dihitung dari tarif unit masing-masing, jadi kolom ini null.
+  nominalPerUnit Int?
   keterangan     String?
   /// Nonaktifkan setelah selesai ditagih supaya tidak terus muncul di form
   /// warga, tanpa menghapus riwayat pembayaran yang sudah ada.
