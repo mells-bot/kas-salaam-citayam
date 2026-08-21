@@ -24,7 +24,7 @@ export default async function DashboardWarga() {
 
   const periodeIni = periodeSekarang()
 
-  const [kartu, unit, menunggu, terakhir] = await Promise.all([
+  const [kartu, unit, menunggu, terakhir, ditolak] = await Promise.all([
     kartuIuranUnit(sesi.unitId, periodeIni),
     db.unit.findUnique({
       where: { id: sesi.unitId },
@@ -38,6 +38,14 @@ export default async function DashboardWarga() {
       orderBy: [{ tanggal: 'desc' }, { createdAt: 'desc' }],
       take: 5,
       include: { alokasi: { orderBy: [{ periode: 'asc' }, { jenisIuran: 'asc' }] } },
+    }),
+    // Laporan yang ditolak ditonjolkan terpisah: warga perlu tahu alasannya
+    // supaya bisa memperbaiki, bukan sekadar melihat statusnya berubah.
+    db.transaction.findMany({
+      where: { unitId: sesi.unitId, status: STATUS.REJECTED, dibatalkanPada: null },
+      orderBy: [{ reviewedAt: 'desc' }],
+      take: 3,
+      select: { id: true, nominal: true, alasanTolak: true, reviewedAt: true },
     }),
   ])
 
@@ -64,6 +72,34 @@ export default async function DashboardWarga() {
         <Peringatan nada="ingat" judul={`${menunggu} laporan Anda menunggu verifikasi`}>
           Laporan yang belum diverifikasi bendahara <strong>belum</strong> mengubah status lunas Anda.
           Status akan otomatis diperbarui setelah bendahara menyetujui.
+        </Peringatan>
+      )}
+
+      {ditolak.length > 0 && (
+        <Peringatan
+          nada="kritis"
+          judul={`${ditolak.length} laporan Anda ditolak bendahara`}
+        >
+          <ul className="mt-0.5 space-y-1">
+            {ditolak.map((t) => (
+              <li key={t.id}>
+                <span className="tabular font-semibold">{rupiah(t.nominal)}</span>
+                {t.reviewedAt && <span> ({tanggalSingkat(t.reviewedAt)})</span>} —{' '}
+                {t.alasanTolak ?? 'alasan tidak tercatat, silakan hubungi bendahara'}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5">
+            Perbaiki sesuai alasan di atas lalu{' '}
+            <Link href="/warga/lapor" className="font-semibold underline">
+              kirim laporan baru
+            </Link>
+            . Rinciannya ada di{' '}
+            <Link href="/warga/riwayat" className="font-semibold underline">
+              riwayat pembayaran
+            </Link>
+            .
+          </p>
         </Peringatan>
       )}
 
@@ -217,8 +253,11 @@ export default async function DashboardWarga() {
                       <> · untuk {[...new Set(t.alokasi.map((a) => labelPeriode(a.periode)))].join(', ')}</>
                     )}
                   </p>
-                  {t.status === STATUS.REJECTED && t.alasanTolak && (
-                    <p className="mt-1 text-xs text-kritis">Alasan ditolak: {t.alasanTolak}</p>
+                  {t.status === STATUS.REJECTED && (
+                    <p className="mt-1 text-xs text-kritis">
+                      Alasan ditolak:{' '}
+                      {t.alasanTolak ?? 'tidak tercatat — silakan hubungi bendahara'}
+                    </p>
                   )}
                 </div>
               </li>

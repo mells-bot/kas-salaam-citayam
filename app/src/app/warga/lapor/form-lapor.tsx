@@ -6,7 +6,10 @@ import { useFormStatus } from 'react-dom'
 import { aksiLaporBayar, type HasilAksi } from '../actions'
 import { PemilihAlokasi, type BarisTertagih } from '@/components/form-alokasi'
 import { UnggahBukti } from '@/components/unggah-bukti'
+import FormKonfirmasi, { type BarisRingkas } from '@/components/form-konfirmasi'
 import { KELAS_INPUT, Label, Peringatan, Tombol } from '@/components/ui'
+import { JENIS_IURAN_LABEL } from '@/lib/constants'
+import { labelPeriode, rupiah, tanggalSingkat } from '@/lib/format'
 
 function TombolKirim({ nonaktif }: { nonaktif: boolean }) {
   const { pending } = useFormStatus()
@@ -15,6 +18,70 @@ function TombolKirim({ nonaktif }: { nonaktif: boolean }) {
       {pending ? 'Mengirim…' : 'Kirim laporan'}
     </Tombol>
   )
+}
+
+/**
+ * Merangkum isian form untuk dibaca ulang warga sebelum dikirim.
+ * Dibaca dari FormData agar yang dikonfirmasi persis sama dengan yang dikirim.
+ */
+export function ringkasLaporan(fd: FormData): BarisRingkas[] {
+  const baris: BarisRingkas[] = []
+
+  const tgl = String(fd.get('tanggal') ?? '')
+  baris.push({ label: 'Tanggal bayar', nilai: tgl ? tanggalSingkat(tgl) : '—' })
+  baris.push({ label: 'Metode', nilai: fd.get('metode') === 'TUNAI' ? 'Tunai' : 'Transfer bank' })
+
+  // Alokasi dikirim sebagai alokasi[i][...]; kumpulkan per indeks.
+  const alokasi: { periode: string; jenisIuran: string; nominal: number }[] = []
+  for (const [key, value] of fd.entries()) {
+    const m = key.match(/^alokasi\[(\d+)\]\[periode\]$/)
+    if (!m) continue
+    alokasi.push({
+      periode: String(value),
+      jenisIuran: String(fd.get(`alokasi[${m[1]}][jenisIuran]`) ?? ''),
+      nominal: Number(fd.get(`alokasi[${m[1]}][nominal]`) ?? 0),
+    })
+  }
+
+  const totalAlokasi = alokasi.reduce((s, a) => s + a.nominal, 0)
+  const nominal = Number(fd.get('nominal') ?? 0)
+
+  baris.push({
+    label: 'Bulan yang dibayar',
+    nilai:
+      alokasi.length === 0
+        ? 'Belum ada bulan ditandai'
+        : alokasi
+            .map(
+              (a) =>
+                `${labelPeriode(a.periode)} · ${JENIS_IURAN_LABEL[a.jenisIuran] ?? a.jenisIuran} ${rupiah(a.nominal)}`,
+            )
+            .join(' · '),
+    nada: alokasi.length === 0 ? 'ingat' : 'netral',
+  })
+
+  baris.push({ label: 'Nominal ditransfer', nilai: rupiah(nominal) })
+
+  const selisih = nominal - totalAlokasi
+  if (selisih !== 0) {
+    baris.push({
+      label: selisih > 0 ? 'Belum dialokasikan ke bulan' : 'Kelebihan alokasi',
+      nilai: rupiah(Math.abs(selisih)),
+      nada: selisih > 0 ? 'ingat' : 'kritis',
+    })
+  }
+
+  const bukti = String(fd.get('buktiUrl') ?? '')
+  baris.push({
+    label: 'Bukti transfer',
+    nilai: bukti ? `Terlampir (± ${Math.round(bukti.length / 1024)} KB)` : 'Tidak dilampirkan',
+    nada: bukti ? 'netral' : 'ingat',
+  })
+
+  const remark = String(fd.get('remark') ?? '').trim()
+  if (remark) baris.push({ label: 'Catatan', nilai: remark })
+
+  return baris
 }
 
 export default function FormLapor({ tertagih }: { tertagih: BarisTertagih[] }) {
@@ -55,7 +122,14 @@ export default function FormLapor({ tertagih }: { tertagih: BarisTertagih[] }) {
   ).padStart(2, '0')}`
 
   return (
-    <form action={aksi} className="space-y-4">
+    <FormKonfirmasi
+      action={aksi}
+      ringkas={ringkasLaporan}
+      className="space-y-4"
+      judul="Sudah sesuai?"
+      catatan="Periksa bulan, nominal, dan buktinya sekali lagi. Setelah terkirim, laporan hanya bisa dibatalkan selama belum diverifikasi — tidak bisa diubah."
+      labelKirim="Ya, kirim laporan"
+    >
       {hasil?.galat && <Peringatan nada="kritis">{hasil.galat}</Peringatan>}
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -88,6 +162,6 @@ export default function FormLapor({ tertagih }: { tertagih: BarisTertagih[] }) {
       </div>
 
       <TombolKirim nonaktif={tertagih.length === 0} />
-    </form>
+    </FormKonfirmasi>
   )
 }

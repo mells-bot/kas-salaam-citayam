@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { JENIS_IURAN_LABEL, STATUS } from '@/lib/constants'
 import { labelPeriode, rupiah, tanggalSingkat, waktu } from '@/lib/format'
 import { Kartu, JudulSeksi, Kosong, LencanaStatusTransaksi, Nominal } from '@/components/ui'
+import LihatBukti from '@/components/lihat-bukti'
 import TombolBatal from './tombol-batal'
 
 export const metadata = { title: 'Riwayat Pembayaran · Kas Cluster' }
@@ -78,28 +79,37 @@ export default async function RiwayatWarga() {
 
                 {t.remark && <p className="mt-1.5 text-xs text-ink-2">Catatan: {t.remark}</p>}
 
-                {t.status === STATUS.REJECTED && t.alasanTolak && (
-                  <p className="mt-1.5 rounded-md bg-[#d03b3b]/8 px-2 py-1.5 text-xs text-[#8f2626]">
-                    Ditolak{t.reviewedBy ? ` oleh ${t.reviewedBy.nama}` : ''}: {t.alasanTolak}
-                  </p>
+                {t.status === STATUS.REJECTED && (
+                  <div className="mt-2 rounded-md bg-[#d03b3b]/8 px-2.5 py-2 text-xs text-[#8f2626]">
+                    <p className="font-semibold">
+                      Ditolak bendahara{t.reviewedBy ? ` (${t.reviewedBy.nama})` : ''}
+                      {t.reviewedAt ? ` · ${waktu(t.reviewedAt)}` : ''}
+                    </p>
+                    <p className="mt-0.5">
+                      {t.alasanTolak
+                        ? `Alasan: ${t.alasanTolak}`
+                        : 'Alasan tidak tercatat pada laporan ini. Hubungi bendahara untuk penjelasannya.'}
+                    </p>
+                    <p className="mt-1 opacity-80">
+                      Silakan perbaiki sesuai alasan di atas, lalu kirim laporan baru.
+                    </p>
+                  </div>
                 )}
                 {t.dibatalkanPada && t.alasanPembatalan && (
                   <p className="mt-1.5 text-xs text-ink-muted">{t.alasanPembatalan}</p>
                 )}
 
-                {t.buktiUrl && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-xs font-medium text-[#1c5cab] hover:underline">
-                      Lihat bukti transfer
-                    </summary>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={t.buktiUrl}
-                      alt={`Bukti transfer ${tanggalSingkat(t.tanggal)}`}
-                      className="mt-2 max-w-xs rounded-lg ring-1 ring-hairline"
+                <div className="mt-2">
+                  {t.buktiUrl ? (
+                    <LihatBukti
+                      url={t.buktiUrl}
+                      label="Lihat bukti pembayaran"
+                      keterangan={`${rupiah(t.nominal)} · dibayar ${tanggalSingkat(t.tanggal)}`}
                     />
-                  </details>
-                )}
+                  ) : (
+                    <p className="text-xs text-ink-muted">Tanpa lampiran bukti.</p>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

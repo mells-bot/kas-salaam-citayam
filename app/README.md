@@ -57,7 +57,7 @@ muncul dua kali (A1 dan A3) — keduanya dibedakan lewat kode unit, bukan nama.
 | Autentikasi | Cookie session sendiri (JWT + bcrypt) | Sesuai NF-02: kode unit + PIN. Tanpa vendor, tanpa biaya |
 | Grafik | SVG + HTML buatan sendiri | Nol dependensi charting |
 | PDF | Print stylesheet + dialog cetak peramban | "Simpan sebagai PDF" tanpa pustaka PDF |
-| Bukti transfer | Dikompres di peramban, disimpan di database | Tanpa object storage berbayar |
+| Bukti transfer | Dikompres di peramban (kamera atau galeri), disimpan di database | Tanpa object storage berbayar |
 | Hosting | Vercel Hobby | Gratis, deploy otomatis dari Git |
 
 Total biaya bulanan: **Rp0** pada skala 34 unit.
@@ -341,7 +341,9 @@ app/
     ├── components/
     │   ├── form-alokasi.tsx   Pemilih periode iuran  <- pengganti kolom Remark
     │   ├── grafik.tsx         Grafik arus kas & saldo (SVG/HTML)
-    │   ├── unggah-bukti.tsx   Kompresi gambar di sisi klien
+    │   ├── unggah-bukti.tsx   Kompresi gambar di sisi klien (kamera & galeri)
+    │   ├── lihat-bukti.tsx    Penampil bukti layar penuh (warga & bendahara)
+    │   ├── form-konfirmasi.tsx Ringkasan konfirmasi sebelum laporan dikirim
     │   └── ui.tsx             Kartu, lencana status, tombol, input
     └── app/
         ├── login/

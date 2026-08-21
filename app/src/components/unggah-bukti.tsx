@@ -8,6 +8,11 @@ import { Label } from './ui'
  * data URL di database. Untuk 34 unit, ini menghindari kebutuhan object storage
  * berbayar sepenuhnya. Batas ~1280px / kualitas 0.72 menghasilkan berkas
  * sekitar 100-200 KB — cukup untuk membaca nominal & tanggal pada struk.
+ *
+ * Dua jalur pilih berkas disediakan sengaja: `capture="environment"` memaksa
+ * kamera terbuka di HP, jadi warga yang sudah menyimpan struk m-banking di
+ * galeri tidak bisa memakainya. Input kedua tanpa `capture` membuka pemilih
+ * berkas/galeri seperti biasa.
  */
 
 const LEBAR_MAKS = 1280
@@ -46,15 +51,21 @@ export function UnggahBukti({ nama = 'buktiUrl' }: { nama?: string }) {
   const [dataUrl, setDataUrl] = useState('')
   const [galat, setGalat] = useState('')
   const [sibuk, setSibuk] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const refKamera = useRef<HTMLInputElement>(null)
+  const refGaleri = useRef<HTMLInputElement>(null)
 
   async function pilih(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     setGalat('')
 
-    if (!file.type.startsWith('image/')) {
-      setGalat('Berkas harus berupa gambar (JPG/PNG/HEIC).')
+    // Sebagian peramban Android mengirim type kosong untuk berkas dari galeri,
+    // jadi ekstensi dipakai sebagai jaring pengaman sebelum berkas ditolak.
+    const namaBerkas = file.name.toLowerCase()
+    const sepertiGambar =
+      file.type.startsWith('image/') || /\.(jpe?g|png|webp|heic|heif|gif|bmp)$/.test(namaBerkas)
+    if (!sepertiGambar) {
+      setGalat('Berkas harus berupa gambar (JPG/PNG/HEIC). Tangkapan layar m-banking juga bisa.')
       return
     }
     if (file.size > BATAS_ASLI) {
@@ -65,17 +76,22 @@ export function UnggahBukti({ nama = 'buktiUrl' }: { nama?: string }) {
     setSibuk(true)
     try {
       setDataUrl(await kompres(file))
-    } catch (err) {
-      setGalat(err instanceof Error ? err.message : 'Gagal memproses gambar.')
+    } catch {
+      setGalat(
+        'Gambar ini tidak bisa dibaca peramban Anda (biasanya format HEIC dari iPhone). Buka gambarnya di galeri, simpan/bagikan sebagai JPG, lalu coba lagi.',
+      )
     } finally {
       setSibuk(false)
+      // Reset supaya memilih berkas yang sama dua kali tetap memicu onChange.
+      e.target.value = ''
     }
   }
 
   function hapus() {
     setDataUrl('')
     setGalat('')
-    if (inputRef.current) inputRef.current.value = ''
+    if (refKamera.current) refKamera.current.value = ''
+    if (refGaleri.current) refGaleri.current.value = ''
   }
 
   return (
@@ -99,32 +115,57 @@ export function UnggahBukti({ nama = 'buktiUrl' }: { nama?: string }) {
           </div>
         </div>
       ) : (
-        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-baseline px-4 py-5 text-sm text-ink-2 hover:bg-plane">
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={pilih}
-            className="sr-only"
-            disabled={sibuk}
-          />
-          <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M12 16V5m0 0L8 9m4-4 4 4M5 17v2h14v-2"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-baseline px-3 py-4 text-sm text-ink-2 hover:bg-plane">
+            <input
+              ref={refKamera}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={pilih}
+              className="sr-only"
+              disabled={sibuk}
             />
-          </svg>
-          {sibuk ? 'Memproses gambar…' : 'Ambil foto atau pilih gambar'}
-        </label>
+            <svg className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M4 8.5h2.2l1.3-2h9l1.3 2H20v10H4v-10Z M12 16.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {sibuk ? 'Memproses…' : 'Ambil foto'}
+          </label>
+
+          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-baseline px-3 py-4 text-sm text-ink-2 hover:bg-plane">
+            <input
+              ref={refGaleri}
+              type="file"
+              accept="image/*"
+              onChange={pilih}
+              className="sr-only"
+              disabled={sibuk}
+            />
+            <svg className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M4 5.5h16v13H4v-13Zm0 9.5 4.5-4.5 3.5 3.5 3-3 5 5"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="9" cy="9" r="1.4" fill="currentColor" />
+            </svg>
+            {sibuk ? 'Memproses…' : 'Pilih dari galeri'}
+          </label>
+        </div>
       )}
 
       {galat && <p className="mt-1 text-xs text-kritis">{galat}</p>}
       <p className="mt-1 text-xs text-ink-muted">
-        Gambar dikompres otomatis di HP Anda sebelum dikirim, jadi hemat kuota.
+        Boleh foto struk maupun tangkapan layar m-banking dari galeri. Gambar dikompres otomatis di HP Anda
+        sebelum dikirim, jadi hemat kuota.
       </p>
     </div>
   )

@@ -91,8 +91,15 @@ export async function aksiTolak(_prev: HasilAksi | null, formData: FormData): Pr
   const alasan = String(formData.get('alasan') ?? '').trim()
 
   // Alasan diwajibkan: warga harus tahu apa yang perlu diperbaiki, dan ini
-  // yang mencegah sengketa "laporan saya hilang tanpa penjelasan".
-  if (alasan.length < 5) return { galat: 'Alasan penolakan wajib diisi (minimal 5 karakter).' }
+  // yang mencegah sengketa "laporan saya hilang tanpa penjelasan". Batas 10
+  // karakter (bukan 5) supaya "salah" atau "gak ada" tidak lolos — keterangan
+  // sesingkat itu tidak memberi tahu warga apa pun.
+  if (alasan.length < 10) {
+    return {
+      galat:
+        'Keterangan penolakan wajib diisi minimal 10 karakter, dan harus menjelaskan apa yang perlu diperbaiki warga.',
+    }
+  }
 
   const trx = await db.transaction.findUnique({
     where: { id },

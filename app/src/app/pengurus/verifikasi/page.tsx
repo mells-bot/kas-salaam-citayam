@@ -3,6 +3,7 @@ import { wajibPengurus } from '@/lib/auth'
 import { JENIS_IURAN_LABEL, ROLES, STATUS } from '@/lib/constants'
 import { labelPeriode, rupiah, tanggalSingkat, waktu } from '@/lib/format'
 import { Kartu, JudulSeksi, Kosong, LencanaStatusTransaksi, Nominal, Peringatan } from '@/components/ui'
+import LihatBukti from '@/components/lihat-bukti'
 import PanelVerifikasi from './panel-verifikasi'
 
 export const metadata = { title: 'Verifikasi Laporan · Kas Cluster' }
@@ -120,19 +121,19 @@ export default async function HalamanVerifikasi() {
                   </p>
                 )}
 
-                {t.buktiUrl && (
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-xs font-medium text-[#1c5cab] hover:underline">
-                      Lihat bukti transfer
-                    </summary>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={t.buktiUrl}
-                      alt={`Bukti transfer unit ${t.unit?.kode}`}
-                      className="mt-2 max-w-sm rounded-lg ring-1 ring-hairline"
+                <div className="mt-3">
+                  {t.buktiUrl ? (
+                    <LihatBukti
+                      url={t.buktiUrl}
+                      label="Lihat bukti pembayaran"
+                      keterangan={`${t.unit?.kode ?? '—'} · ${rupiah(t.nominal)} · ${tanggalSingkat(t.tanggal)}`}
                     />
-                  </details>
-                )}
+                  ) : (
+                    <p className="text-xs text-[#8a5d00]">
+                      Warga tidak melampirkan bukti. Pastikan mutasi rekening cocok sebelum menyetujui.
+                    </p>
+                  )}
+                </div>
 
                 {bisaVerifikasi ? (
                   <div className="mt-4 border-t border-grid pt-3">
@@ -160,12 +161,13 @@ export default async function HalamanVerifikasi() {
                   <th scope="col" className="py-2 pr-3 font-medium">Unit</th>
                   <th scope="col" className="py-2 pr-3 text-right font-medium">Nominal</th>
                   <th scope="col" className="py-2 pr-3 font-medium">Hasil</th>
-                  <th scope="col" className="py-2 font-medium">Diperiksa oleh</th>
+                  <th scope="col" className="py-2 pr-3 font-medium">Diperiksa oleh</th>
+                  <th scope="col" className="py-2 font-medium">Bukti</th>
                 </tr>
               </thead>
               <tbody>
                 {riwayat.map((t) => (
-                  <tr key={t.id} className="border-b border-grid last:border-0">
+                  <tr key={t.id} className="border-b border-grid align-top last:border-0">
                     <td className="py-2 pr-3 whitespace-nowrap text-ink-2">
                       {t.reviewedAt ? waktu(t.reviewedAt) : '—'}
                     </td>
@@ -173,8 +175,25 @@ export default async function HalamanVerifikasi() {
                     <td className="tabular py-2 pr-3 text-right">{rupiah(t.nominal)}</td>
                     <td className="py-2 pr-3">
                       <LencanaStatusTransaksi status={t.dibatalkanPada ? STATUS.VOID : t.status} />
+                      {t.status === STATUS.REJECTED && (
+                        <span className="mt-1 block max-w-[220px] text-xs text-ink-2">
+                          {t.alasanTolak ?? 'tanpa keterangan'}
+                        </span>
+                      )}
                     </td>
-                    <td className="py-2 text-ink-2">{t.reviewedBy?.nama ?? '—'}</td>
+                    <td className="py-2 pr-3 text-ink-2">{t.reviewedBy?.nama ?? '—'}</td>
+                    <td className="py-2">
+                      {t.buktiUrl ? (
+                        <LihatBukti
+                          url={t.buktiUrl}
+                          ukuran="kecil"
+                          label="Lihat"
+                          keterangan={`${t.unit?.kode ?? '—'} · ${rupiah(t.nominal)} · ${tanggalSingkat(t.tanggal)}`}
+                        />
+                      ) : (
+                        <span className="text-xs text-ink-muted">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

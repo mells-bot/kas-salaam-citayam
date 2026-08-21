@@ -51,7 +51,11 @@ export default async function HalamanTambahanWarga() {
               </div>
 
               {status && status.kurang > 0 ? (
-                <FormLaporTambahan tagihanTambahanId={tagihan.id} kurang={status.kurang} />
+                <FormLaporTambahan
+                  tagihanTambahanId={tagihan.id}
+                  namaTagihan={tagihan.nama}
+                  kurang={status.kurang}
+                />
               ) : (
                 <p className="text-sm text-[--color-sukses-teks]">Sudah lunas. Terima kasih.</p>
               )}

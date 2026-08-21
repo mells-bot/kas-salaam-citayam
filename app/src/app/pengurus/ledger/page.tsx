@@ -6,6 +6,7 @@ import { JENIS_IURAN_LABEL, JENIS_TRANSAKSI, ROLES, STATUS } from '@/lib/constan
 import { labelPeriode, rupiah, tanggalSingkat } from '@/lib/format'
 import { daftarSemuaKategori } from '@/lib/kategori'
 import { Kartu, JudulSeksi, Kosong, Nominal, Peringatan } from '@/components/ui'
+import LihatBukti from '@/components/lihat-bukti'
 import TombolBatalkan from './tombol-batalkan'
 
 export const metadata = { title: 'Buku Kas · Kas Cluster' }
@@ -210,6 +211,16 @@ export default async function HalamanLedger({ searchParams }: Params) {
                         )}
                       </span>
                       {b.remark && <span className="mt-0.5 block text-xs text-ink-2">{b.remark}</span>}
+                      {b.buktiUrl && (
+                        <span className="mt-0.5 block">
+                          <LihatBukti
+                            url={b.buktiUrl}
+                            ukuran="kecil"
+                            label="Lihat bukti"
+                            keterangan={`${b.uraian} · ${rupiah(b.nominal)} · ${tanggalSingkat(b.tanggal)}`}
+                          />
+                        </span>
+                      )}
                     </td>
                     <td className="tabular py-2 pr-2 text-right">
                       {b.debit > 0 ? <Nominal nilai={b.debit} /> : <span className="text-ink-muted">—</span>}
